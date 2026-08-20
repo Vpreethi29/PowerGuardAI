@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 import backend
 
@@ -14,7 +15,7 @@ from backend import (
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
@@ -25,7 +26,7 @@ st.set_page_config(
 
 
 # ============================================================
-# CUSTOM CSS
+# STYLE
 # ============================================================
 
 st.markdown(
@@ -82,85 +83,110 @@ st.divider()
 # SIDEBAR
 # ============================================================
 
-st.sidebar.title(
-    "⚙️ Grid Parameters"
-)
+st.sidebar.title("⚙️ Grid Parameters")
 
 st.sidebar.write(
-    "Enter the electrical operating conditions."
+    "Enter the operating conditions used by the trained ML model."
 )
 
 
-voltage = st.sidebar.number_input(
-    "Voltage",
-    min_value=0.0,
-    value=230.0,
-    step=1.0
+# ------------------------------------------------------------
+# VOLTAGE FLUCTUATION
+# ------------------------------------------------------------
+
+voltage_fluctuation = st.sidebar.number_input(
+    "Voltage Fluctuation (%)",
+    min_value=-100.0,
+    max_value=100.0,
+    value=0.0,
+    step=0.1
 )
 
 
-current = st.sidebar.number_input(
-    "Current",
-    min_value=0.0,
-    value=50.0,
-    step=1.0
+# ------------------------------------------------------------
+# TEMPERATURE
+# ------------------------------------------------------------
+
+temperature = st.sidebar.number_input(
+    "Temperature (°C)",
+    min_value=-50.0,
+    max_value=150.0,
+    value=55.0,
+    step=0.5
 )
 
 
-power = st.sidebar.number_input(
-    "Power Consumption",
-    min_value=0.0,
-    value=100.0,
-    step=1.0
-)
+# ------------------------------------------------------------
+# ELECTRICITY PRICE
+# ------------------------------------------------------------
 
-
-power_factor = st.sidebar.number_input(
-    "Power Factor",
+electricity_price = st.sidebar.number_input(
+    "Electricity Price (USD/kWh)",
     min_value=0.0,
-    max_value=1.0,
-    value=0.95,
+    max_value=10.0,
+    value=0.15,
     step=0.01
 )
 
 
-temperature = st.sidebar.number_input(
-    "Temperature",
-    min_value=0.0,
-    value=55.0,
-    step=1.0
+# ------------------------------------------------------------
+# TIME
+# ------------------------------------------------------------
+
+st.sidebar.subheader("🕐 Time Information")
+
+selected_datetime = st.sidebar.datetime_input(
+    "Date and Time",
+    value=datetime.now()
 )
 
+
+hour = selected_datetime.hour
+
+month = selected_datetime.month
+
+day_of_week = selected_datetime.weekday()
+
+is_weekend = 1 if day_of_week >= 5 else 0
+
+
+# ------------------------------------------------------------
+# PEAK HOUR
+# ------------------------------------------------------------
+
+is_peak_hour = st.sidebar.checkbox(
+    "Peak Hour",
+    value=(hour in [7, 8, 9, 18, 19, 20, 21])
+)
+
+
+# ------------------------------------------------------------
+# RENEWABLE RATIO
+# ------------------------------------------------------------
+
+renewable_ratio = st.sidebar.number_input(
+    "Renewable Ratio",
+    min_value=0.0,
+    max_value=1.0,
+    value=0.30,
+    step=0.01
+)
+
+
+# ------------------------------------------------------------
+# POWER IMBALANCE
+# ------------------------------------------------------------
 
 power_imbalance = st.sidebar.number_input(
     "Power Imbalance",
-    min_value=0.0,
-    value=5.0,
-    step=1.0
+    min_value=-100000.0,
+    max_value=100000.0,
+    value=0.0,
+    step=0.1
 )
 
-
-solar_power = st.sidebar.number_input(
-    "Solar Power",
-    min_value=0.0,
-    value=30.0,
-    step=1.0
-)
-
-
-wind_power = st.sidebar.number_input(
-    "Wind Power",
-    min_value=0.0,
-    value=20.0,
-    step=1.0
-)
-
-
-predicted_load = st.sidebar.number_input(
-    "Predicted Load",
-    min_value=0.0,
-    value=100.0,
-    step=1.0
+absolute_power_imbalance = abs(
+    power_imbalance
 )
 
 
@@ -170,25 +196,68 @@ predicted_load = st.sidebar.number_input(
 
 input_data = {
 
-    "Voltage": voltage,
+    "Voltage Fluctuation (%)":
+        voltage_fluctuation,
 
-    "Current": current,
+    "Temperature (°C)":
+        temperature,
 
-    "Power Consumption": power,
+    "Electricity Price (USD/kWh)":
+        electricity_price,
 
-    "Power Factor": power_factor,
+    "Hour":
+        hour,
 
-    "Temperature": temperature,
+    "Month":
+        month,
 
-    "Power Imbalance": power_imbalance,
+    "DayOfWeek":
+        day_of_week,
 
-    "Solar Power": solar_power,
+    "IsWeekend":
+        is_weekend,
 
-    "Wind Power": wind_power,
+    "IsPeakHour":
+        int(is_peak_hour),
 
-    "Predicted Load": predicted_load
+    "Renewable_Ratio":
+        renewable_ratio,
 
+    "Absolute_Power_Imbalance":
+        absolute_power_imbalance
 }
+
+
+# ============================================================
+# SHOW DERIVED VALUES
+# ============================================================
+
+with st.sidebar.expander("📋 Calculated Features"):
+
+    st.write(
+        f"**Hour:** {hour}"
+    )
+
+    st.write(
+        f"**Month:** {month}"
+    )
+
+    st.write(
+        f"**DayOfWeek:** {day_of_week}"
+    )
+
+    st.write(
+        f"**IsWeekend:** {is_weekend}"
+    )
+
+    st.write(
+        f"**IsPeakHour:** {int(is_peak_hour)}"
+    )
+
+    st.write(
+        f"**Absolute Power Imbalance:** "
+        f"{absolute_power_imbalance:.2f}"
+    )
 
 
 # ============================================================
@@ -226,6 +295,10 @@ if analyze:
                 input_data
             )
 
+
+        # ----------------------------------------------------
+        # RESULTS
+        # ----------------------------------------------------
 
         fault_prediction = (
             fault_result["prediction"]
@@ -265,12 +338,11 @@ if analyze:
             unsafe_allow_html=True
         )
 
-
         col1, col2, col3 = st.columns(3)
 
 
         # ----------------------------------------------------
-        # TRANSFORMER FAULT
+        # FAULT
         # ----------------------------------------------------
 
         with col1:
@@ -328,7 +400,7 @@ if analyze:
 
 
         # ----------------------------------------------------
-        # OVERALL RISK
+        # RISK
         # ----------------------------------------------------
 
         with col3:
@@ -373,7 +445,7 @@ if analyze:
 
 
         # ====================================================
-        # GRID MONITORING
+        # MONITORING
         # ====================================================
 
         st.divider()
@@ -385,33 +457,14 @@ if analyze:
             unsafe_allow_html=True
         )
 
+        monitor1, monitor2, monitor3 = st.columns(3)
 
-        monitor_col1, monitor_col2, monitor_col3 = st.columns(3)
 
-
-        with monitor_col1:
-
-            st.metric(
-                "Voltage",
-                f"{voltage:.2f} V"
-            )
+        with monitor1:
 
             st.metric(
-                "Current",
-                f"{current:.2f} A"
-            )
-
-            st.metric(
-                "Power",
-                f"{power:.2f}"
-            )
-
-
-        with monitor_col2:
-
-            st.metric(
-                "Power Factor",
-                f"{power_factor:.2f}"
+                "Voltage Fluctuation",
+                f"{voltage_fluctuation:.2f}%"
             )
 
             st.metric(
@@ -420,26 +473,44 @@ if analyze:
             )
 
             st.metric(
+                "Electricity Price",
+                f"${electricity_price:.3f}/kWh"
+            )
+
+
+        with monitor2:
+
+            st.metric(
+                "Hour",
+                str(hour)
+            )
+
+            st.metric(
+                "Month",
+                str(month)
+            )
+
+            st.metric(
+                "Day of Week",
+                str(day_of_week)
+            )
+
+
+        with monitor3:
+
+            st.metric(
+                "Renewable Ratio",
+                f"{renewable_ratio:.2f}"
+            )
+
+            st.metric(
                 "Power Imbalance",
                 f"{power_imbalance:.2f}"
             )
 
-
-        with monitor_col3:
-
             st.metric(
-                "Solar Power",
-                f"{solar_power:.2f}"
-            )
-
-            st.metric(
-                "Wind Power",
-                f"{wind_power:.2f}"
-            )
-
-            st.metric(
-                "Predicted Load",
-                f"{predicted_load:.2f}"
+                "Peak Hour",
+                "Yes" if is_peak_hour else "No"
             )
 
 
@@ -457,19 +528,18 @@ if analyze:
         )
 
         st.write(
-            "SHAP shows how the input features contributed "
-            "to the model prediction."
+            "SHAP shows how each model feature contributed "
+            "to the prediction."
         )
 
 
         # ====================================================
-        # TRANSFORMER FAULT SHAP
+        # FAULT SHAP
         # ====================================================
 
         st.subheader(
             "⚡ Transformer Fault Explanation"
         )
-
 
         fault_shap = generate_shap_explanation(
             model=backend.fault_model,
@@ -479,32 +549,23 @@ if analyze:
 
         if not fault_shap.empty:
 
-            display_fault = fault_shap[
-                [
-                    "Feature",
-                    "Value",
-                    "SHAP Value",
-                    "Impact"
-                ]
-            ].head(10)
-
-
             st.dataframe(
-                display_fault,
+                fault_shap[
+                    [
+                        "Feature",
+                        "Value",
+                        "SHAP Value",
+                        "Impact"
+                    ]
+                ].head(10),
                 use_container_width=True,
                 hide_index=True
             )
 
 
-            # ------------------------------------------------
-            # FAULT SHAP CHART
-            # ------------------------------------------------
-
             chart_data = fault_shap.head(
-                8
-            ).copy()
-
-            chart_data = chart_data.sort_values(
+                10
+            ).sort_values(
                 "SHAP Value"
             )
 
@@ -513,18 +574,15 @@ if analyze:
                 figsize=(9, 5)
             )
 
-
             ax.barh(
                 chart_data["Feature"].astype(str),
                 chart_data["SHAP Value"]
             )
 
-
             ax.axvline(
                 0,
                 linewidth=1
             )
-
 
             ax.set_xlabel(
                 "SHAP Value"
@@ -537,7 +595,6 @@ if analyze:
             ax.set_title(
                 "Transformer Fault — Feature Contributions"
             )
-
 
             plt.tight_layout()
 
@@ -557,7 +614,6 @@ if analyze:
             "🔥 Overload Explanation"
         )
 
-
         overload_shap = generate_shap_explanation(
             model=backend.overload_model,
             X=overload_result["features"]
@@ -566,32 +622,23 @@ if analyze:
 
         if not overload_shap.empty:
 
-            display_overload = overload_shap[
-                [
-                    "Feature",
-                    "Value",
-                    "SHAP Value",
-                    "Impact"
-                ]
-            ].head(10)
-
-
             st.dataframe(
-                display_overload,
+                overload_shap[
+                    [
+                        "Feature",
+                        "Value",
+                        "SHAP Value",
+                        "Impact"
+                    ]
+                ].head(10),
                 use_container_width=True,
                 hide_index=True
             )
 
 
-            # ------------------------------------------------
-            # OVERLOAD SHAP CHART
-            # ------------------------------------------------
-
             chart_data = overload_shap.head(
-                8
-            ).copy()
-
-            chart_data = chart_data.sort_values(
+                10
+            ).sort_values(
                 "SHAP Value"
             )
 
@@ -600,18 +647,15 @@ if analyze:
                 figsize=(9, 5)
             )
 
-
             ax.barh(
                 chart_data["Feature"].astype(str),
                 chart_data["SHAP Value"]
             )
 
-
             ax.axvline(
                 0,
                 linewidth=1
             )
-
 
             ax.set_xlabel(
                 "SHAP Value"
@@ -624,7 +668,6 @@ if analyze:
             ax.set_title(
                 "Overload — Feature Contributions"
             )
-
 
             plt.tight_layout()
 
@@ -649,17 +692,11 @@ if analyze:
             unsafe_allow_html=True
         )
 
-
         recommendations = generate_recommendations(
-
             input_data,
-
             fault_prediction,
-
             overload_prediction
-
         )
-
 
         for recommendation in recommendations:
 
@@ -675,7 +712,7 @@ if analyze:
         st.divider()
 
         with st.expander(
-            "📋 View Input Data"
+            "📋 View Model Input Data"
         ):
 
             input_df = pd.DataFrame(
@@ -698,26 +735,24 @@ if analyze:
         ):
 
             st.write(
-                "PowerGuard AI uses two machine-learning "
-                "models:"
+                "PowerGuard AI uses trained machine-learning "
+                "models for transformer fault detection and "
+                "electrical overload prediction."
             )
 
             st.write(
-                "• Transformer Fault Detection"
+                "The dashboard inputs are aligned with the "
+                "features expected by the saved model."
             )
 
             st.write(
-                "• Electrical Overload Prediction"
-            )
-
-            st.write(
-                "Explainable AI is provided using SHAP "
-                "feature contributions."
+                "SHAP provides feature-level explanations "
+                "for the predictions."
             )
 
 
     # ========================================================
-    # ERROR HANDLING
+    # ERROR
     # ========================================================
 
     except Exception as error:
