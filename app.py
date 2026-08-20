@@ -747,4 +747,3 @@ st.caption(
     "⚡ PowerGuard AI | Machine Learning + "
     "Explainable AI for Smart Grid Monitoring"
 )
-```
