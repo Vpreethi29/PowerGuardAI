@@ -1,6 +1,9 @@
+```python
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+
+import backend
 
 from backend import (
     predict_fault,
@@ -12,7 +15,7 @@ from backend import (
 
 
 # ============================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
@@ -31,9 +34,10 @@ st.markdown(
     <style>
 
     .main-title {
-        font-size: 42px;
+        font-size: 45px;
         font-weight: 800;
         text-align: center;
+        margin-bottom: 5px;
     }
 
     .subtitle {
@@ -42,17 +46,11 @@ st.markdown(
         margin-bottom: 25px;
     }
 
-    .risk-box {
-        padding: 20px;
-        border-radius: 15px;
-        text-align: center;
-        border: 1px solid #cccccc;
-    }
-
     .section-title {
-        font-size: 25px;
+        font-size: 27px;
         font-weight: 700;
         margin-top: 20px;
+        margin-bottom: 10px;
     }
 
     </style>
@@ -72,11 +70,11 @@ st.markdown(
 
 st.markdown(
     '<div class="subtitle">'
-    'Smart Grid Intelligence • Fault Detection • Overload Prediction • Explainable AI'
+    'Smart Grid Intelligence • Fault Detection • '
+    'Overload Prediction • Explainable AI'
     '</div>',
     unsafe_allow_html=True
 )
-
 
 st.divider()
 
@@ -85,71 +83,90 @@ st.divider()
 # SIDEBAR
 # ============================================================
 
-st.sidebar.title("⚙️ Grid Parameters")
+st.sidebar.title(
+    "⚙️ Grid Parameters"
+)
 
 st.sidebar.write(
-    "Enter the electrical parameters below."
+    "Enter the electrical operating conditions."
 )
 
 
 voltage = st.sidebar.number_input(
     "Voltage",
     min_value=0.0,
-    value=230.0
+    value=230.0,
+    step=1.0
 )
+
 
 current = st.sidebar.number_input(
     "Current",
     min_value=0.0,
-    value=50.0
+    value=50.0,
+    step=1.0
 )
+
 
 power = st.sidebar.number_input(
     "Power Consumption",
     min_value=0.0,
-    value=100.0
+    value=100.0,
+    step=1.0
 )
+
 
 power_factor = st.sidebar.number_input(
     "Power Factor",
     min_value=0.0,
     max_value=1.0,
-    value=0.95
+    value=0.95,
+    step=0.01
 )
+
 
 temperature = st.sidebar.number_input(
     "Temperature",
     min_value=0.0,
-    value=55.0
+    value=55.0,
+    step=1.0
 )
+
 
 power_imbalance = st.sidebar.number_input(
     "Power Imbalance",
     min_value=0.0,
-    value=5.0
+    value=5.0,
+    step=1.0
 )
+
 
 solar_power = st.sidebar.number_input(
     "Solar Power",
     min_value=0.0,
-    value=30.0
+    value=30.0,
+    step=1.0
 )
+
 
 wind_power = st.sidebar.number_input(
     "Wind Power",
     min_value=0.0,
-    value=20.0
+    value=20.0,
+    step=1.0
 )
+
 
 predicted_load = st.sidebar.number_input(
     "Predicted Load",
     min_value=0.0,
-    value=100.0
+    value=100.0,
+    step=1.0
 )
 
 
 # ============================================================
-# INPUT DICTIONARY
+# INPUT DATA
 # ============================================================
 
 input_data = {
@@ -171,6 +188,7 @@ input_data = {
     "Wind Power": wind_power,
 
     "Predicted Load": predicted_load
+
 }
 
 
@@ -185,16 +203,20 @@ analyze = st.button(
 )
 
 
+# ============================================================
+# ANALYSIS
+# ============================================================
+
 if analyze:
 
     try:
 
-        # ====================================================
-        # PREDICTION
-        # ====================================================
+        # ----------------------------------------------------
+        # MODEL PREDICTIONS
+        # ----------------------------------------------------
 
         with st.spinner(
-            "Analyzing smart-grid conditions..."
+            "🤖 AI is analyzing smart-grid conditions..."
         ):
 
             fault_result = predict_fault(
@@ -223,9 +245,9 @@ if analyze:
         )
 
 
-        # ====================================================
+        # ----------------------------------------------------
         # RISK
-        # ====================================================
+        # ----------------------------------------------------
 
         risk = calculate_risk(
             fault_probability,
@@ -244,8 +266,13 @@ if analyze:
             unsafe_allow_html=True
         )
 
+
         col1, col2, col3 = st.columns(3)
 
+
+        # ----------------------------------------------------
+        # TRANSFORMER FAULT
+        # ----------------------------------------------------
 
         with col1:
 
@@ -258,7 +285,10 @@ if analyze:
 
                 st.progress(
                     min(
-                        fault_probability,
+                        max(
+                            fault_probability,
+                            0.0
+                        ),
                         1.0
                     )
                 )
@@ -268,6 +298,10 @@ if analyze:
                     f"{fault_probability * 100:.2f}%"
                 )
 
+
+        # ----------------------------------------------------
+        # OVERLOAD
+        # ----------------------------------------------------
 
         with col2:
 
@@ -280,7 +314,10 @@ if analyze:
 
                 st.progress(
                     min(
-                        overload_probability,
+                        max(
+                            overload_probability,
+                            0.0
+                        ),
                         1.0
                     )
                 )
@@ -291,6 +328,10 @@ if analyze:
                 )
 
 
+        # ----------------------------------------------------
+        # OVERALL RISK
+        # ----------------------------------------------------
+
         with col3:
 
             st.metric(
@@ -300,7 +341,10 @@ if analyze:
 
             st.progress(
                 min(
-                    risk / 100,
+                    max(
+                        risk / 100,
+                        0.0
+                    ),
                     1.0
                 )
             )
@@ -330,7 +374,7 @@ if analyze:
 
 
         # ====================================================
-        # LIVE MONITORING
+        # GRID MONITORING
         # ====================================================
 
         st.divider()
@@ -401,7 +445,7 @@ if analyze:
 
 
         # ====================================================
-        # SHAP EXPLANATION
+        # EXPLAINABLE AI
         # ====================================================
 
         st.divider()
@@ -414,25 +458,22 @@ if analyze:
         )
 
         st.write(
-            """
-            SHAP explains how each input feature contributed to
-            the model's current prediction.
-            """
+            "SHAP shows how the input features contributed "
+            "to the model prediction."
         )
 
 
         # ====================================================
-        # FAULT SHAP
+        # TRANSFORMER FAULT SHAP
         # ====================================================
 
         st.subheader(
             "⚡ Transformer Fault Explanation"
         )
 
+
         fault_shap = generate_shap_explanation(
-            model=__import__(
-                "backend"
-            ).fault_model,
+            model=backend.fault_model,
             X=fault_result["features"]
         )
 
@@ -448,6 +489,7 @@ if analyze:
                 ]
             ].head(10)
 
+
             st.dataframe(
                 display_fault,
                 use_container_width=True,
@@ -456,10 +498,12 @@ if analyze:
 
 
             # ------------------------------------------------
-            # SHAP BAR CHART
+            # FAULT SHAP CHART
             # ------------------------------------------------
 
-            chart_data = fault_shap.head(8).copy()
+            chart_data = fault_shap.head(
+                8
+            ).copy()
 
             chart_data = chart_data.sort_values(
                 "SHAP Value"
@@ -470,15 +514,18 @@ if analyze:
                 figsize=(9, 5)
             )
 
+
             ax.barh(
-                chart_data["Feature"],
+                chart_data["Feature"].astype(str),
                 chart_data["SHAP Value"]
             )
+
 
             ax.axvline(
                 0,
                 linewidth=1
             )
+
 
             ax.set_xlabel(
                 "SHAP Value"
@@ -489,8 +536,11 @@ if analyze:
             )
 
             ax.set_title(
-                "Transformer Fault — SHAP Contributions"
+                "Transformer Fault — Feature Contributions"
             )
+
+
+            plt.tight_layout()
 
             st.pyplot(
                 fig,
@@ -508,10 +558,9 @@ if analyze:
             "🔥 Overload Explanation"
         )
 
+
         overload_shap = generate_shap_explanation(
-            model=__import__(
-                "backend"
-            ).overload_model,
+            model=backend.overload_model,
             X=overload_result["features"]
         )
 
@@ -527,6 +576,7 @@ if analyze:
                 ]
             ].head(10)
 
+
             st.dataframe(
                 display_overload,
                 use_container_width=True,
@@ -534,7 +584,13 @@ if analyze:
             )
 
 
-            chart_data = overload_shap.head(8).copy()
+            # ------------------------------------------------
+            # OVERLOAD SHAP CHART
+            # ------------------------------------------------
+
+            chart_data = overload_shap.head(
+                8
+            ).copy()
 
             chart_data = chart_data.sort_values(
                 "SHAP Value"
@@ -545,15 +601,18 @@ if analyze:
                 figsize=(9, 5)
             )
 
+
             ax.barh(
-                chart_data["Feature"],
+                chart_data["Feature"].astype(str),
                 chart_data["SHAP Value"]
             )
+
 
             ax.axvline(
                 0,
                 linewidth=1
             )
+
 
             ax.set_xlabel(
                 "SHAP Value"
@@ -564,8 +623,11 @@ if analyze:
             )
 
             ax.set_title(
-                "Overload — SHAP Contributions"
+                "Overload — Feature Contributions"
             )
+
+
+            plt.tight_layout()
 
             st.pyplot(
                 fig,
@@ -576,42 +638,6 @@ if analyze:
 
 
         # ====================================================
-        # TOP RISK CONTRIBUTORS
-        # ====================================================
-
-        st.divider()
-
-        st.subheader(
-            "📌 Top Risk Contributors"
-        )
-
-
-        if not fault_shap.empty:
-
-            top_features = fault_shap.head(5)
-
-            for _, row in top_features.iterrows():
-
-                value = row["SHAP Value"]
-
-                if value > 0:
-
-                    st.warning(
-                        f"⚠️ **{row['Feature']}** "
-                        f"is increasing the predicted risk "
-                        f"(SHAP: {value:.4f})"
-                    )
-
-                else:
-
-                    st.success(
-                        f"✅ **{row['Feature']}** "
-                        f"is reducing the predicted risk "
-                        f"(SHAP: {value:.4f})"
-                    )
-
-
-        # ====================================================
         # RECOMMENDATIONS
         # ====================================================
 
@@ -619,16 +645,20 @@ if analyze:
 
         st.markdown(
             '<div class="section-title">'
-            '💡 Recommended Actions'
+            '🛠️ AI Recommendations'
             '</div>',
             unsafe_allow_html=True
         )
 
 
         recommendations = generate_recommendations(
+
             input_data,
+
             fault_prediction,
+
             overload_prediction
+
         )
 
 
@@ -640,68 +670,72 @@ if analyze:
 
 
         # ====================================================
-        # INPUT SUMMARY
+        # INPUT DATA
         # ====================================================
 
         st.divider()
 
-        st.subheader(
-            "📋 Current Grid Parameters"
-        )
+        with st.expander(
+            "📋 View Input Data"
+        ):
+
+            input_df = pd.DataFrame(
+                [input_data]
+            )
+
+            st.dataframe(
+                input_df,
+                use_container_width=True,
+                hide_index=True
+            )
 
 
-        parameter_table = pd.DataFrame({
+        # ====================================================
+        # MODEL INFORMATION
+        # ====================================================
 
-            "Parameter": [
-                "Voltage",
-                "Current",
-                "Power Consumption",
-                "Power Factor",
-                "Temperature",
-                "Power Imbalance",
-                "Solar Power",
-                "Wind Power",
-                "Predicted Load"
-            ],
+        with st.expander(
+            "🤖 Model Information"
+        ):
 
-            "Value": [
-                voltage,
-                current,
-                power,
-                power_factor,
-                temperature,
-                power_imbalance,
-                solar_power,
-                wind_power,
-                predicted_load
-            ]
-        })
+            st.write(
+                "PowerGuard AI uses two machine-learning "
+                "models:"
+            )
+
+            st.write(
+                "• Transformer Fault Detection"
+            )
+
+            st.write(
+                "• Electrical Overload Prediction"
+            )
+
+            st.write(
+                "Explainable AI is provided using SHAP "
+                "feature contributions."
+            )
 
 
-        st.dataframe(
-            parameter_table,
-            use_container_width=True,
-            hide_index=True
-        )
-
+    # ========================================================
+    # ERROR HANDLING
+    # ========================================================
 
     except Exception as error:
 
         st.error(
-            "❌ Prediction failed."
+            "❌ Unable to analyze the supplied parameters."
         )
 
-        st.code(
+        st.error(
             str(error)
         )
 
-        st.warning(
-            """
-            This usually means that the feature names or feature
-            order entered in the dashboard do not exactly match
-            the features used when the model was trained.
-            """
-        )
+        with st.expander(
+            "🔧 Technical Error Details"
+        ):
+
+            st.exception(error)
 
 
 # ============================================================
@@ -711,5 +745,7 @@ if analyze:
 st.divider()
 
 st.caption(
-    "PowerGuard AI • Machine Learning + SHAP + Smart Recommendations"
+    "⚡ PowerGuard AI | Machine Learning + "
+    "Explainable AI for Smart Grid Monitoring"
 )
+```
