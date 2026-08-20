@@ -797,4 +797,3 @@ def calculate_risk(
         max(values),
         2
     )
-```
