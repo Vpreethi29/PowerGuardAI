@@ -16,8 +16,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # ============================================================
-# LOAD MODEL / PICKLE FILE
-# Supports .pkl and .pkl.gz
+# LOAD FILE
+# Supports both .pkl and .pkl.gz
 # ============================================================
 
 def load_model(filename):
@@ -26,41 +26,42 @@ def load_model(filename):
 
     if not os.path.exists(path):
         raise FileNotFoundError(
-            f"File not found: {filename}\n"
-            f"Expected location: {path}"
+            f"FILE NOT FOUND: {filename}\n"
+            f"Expected at: {path}"
         )
 
     # --------------------------------------------------------
-    # GZIP PICKLE
+    # GZIP FILE
     # --------------------------------------------------------
 
     if filename.endswith(".gz"):
 
-        try:
-            with gzip.open(path, "rb") as file:
-                return pickle.load(file)
+        with gzip.open(path, "rb") as f:
 
-        except Exception:
+            try:
+                return pickle.load(f)
 
-            # Some files may have been compressed from joblib
-            with gzip.open(path, "rb") as file:
-                return joblib.load(file)
+            except Exception:
+
+                f.seek(0)
+                return joblib.load(f)
 
     # --------------------------------------------------------
-    # NORMAL PICKLE
+    # NORMAL PKL
     # --------------------------------------------------------
 
     try:
+
         return joblib.load(path)
 
     except Exception:
 
-        with open(path, "rb") as file:
-            return pickle.load(file)
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
 
 # ============================================================
-# LOAD TRANSFORMER FAULT FILES
+# TRANSFORMER FAULT FILES
 # ============================================================
 
 fault_selector = load_model(
@@ -77,7 +78,7 @@ fault_model = load_model(
 
 
 # ============================================================
-# LOAD OVERLOAD FILES
+# OVERLOAD FILES
 # ============================================================
 
 overload_selector = load_model(
@@ -97,34 +98,28 @@ overload_model = load_model(
 # FEATURE NAME EXTRACTION
 # ============================================================
 
-def extract_feature_names(feature_data):
+def extract_feature_names(data):
 
-    if feature_data is None:
+    if data is None:
         return None
 
-    # List / tuple / numpy array
     if isinstance(
-        feature_data,
+        data,
         (list, tuple, np.ndarray)
     ):
-        return list(feature_data)
+        return list(data)
 
-    # Pandas Index
-    if isinstance(
-        feature_data,
-        pd.Index
-    ):
-        return list(feature_data)
+    if isinstance(data, pd.Index):
+        return list(data)
 
-    # Objects with feature names
     if hasattr(
-        feature_data,
+        data,
         "get_feature_names_out"
     ):
 
         try:
             return list(
-                feature_data.get_feature_names_out()
+                data.get_feature_names_out()
             )
 
         except Exception:
@@ -168,15 +163,14 @@ def prepare_features(
     selector
 ):
 
-    df = create_dataframe(input_data)
+    df = create_dataframe(
+        input_data
+    )
 
-    # --------------------------------------------------------
-    # Normalize column names
-    # --------------------------------------------------------
-
+    # Clean column names
     df.columns = [
-        str(column).strip()
-        for column in df.columns
+        str(c).strip()
+        for c in df.columns
     ]
 
     feature_names = extract_feature_names(
@@ -184,43 +178,63 @@ def prepare_features(
     )
 
     # --------------------------------------------------------
-    # SELECT SAVED FEATURES
+    # SELECT REQUIRED FEATURES
     # --------------------------------------------------------
 
     if feature_names is not None:
 
-        missing = [
-            feature
+        # Exact match
+        if all(
+            feature in df.columns
             for feature in feature_names
-            if feature not in df.columns
-        ]
+        ):
 
-        if missing:
+            X = df[
+                feature_names
+            ].copy()
 
-            # Try case-insensitive matching
+        else:
+
+            # Case-insensitive matching
             column_map = {
-                str(column).lower(): column
-                for column in df.columns
+                str(c).lower(): c
+                for c in df.columns
             }
 
-            alternative_missing = []
+            missing = []
 
-            for feature in missing:
+            matched_columns = []
 
-                if str(feature).lower() not in column_map:
-                    alternative_missing.append(feature)
+            for feature in feature_names:
 
-            if alternative_missing:
+                key = str(
+                    feature
+                ).lower()
+
+                if key in column_map:
+
+                    matched_columns.append(
+                        column_map[key]
+                    )
+
+                else:
+
+                    missing.append(
+                        feature
+                    )
+
+            if missing:
 
                 raise ValueError(
-                    "Missing model features:\n"
+                    "MODEL FEATURE MISMATCH.\n\n"
+                    "Required features:\n"
                     + ", ".join(
                         map(
                             str,
-                            alternative_missing
+                            feature_names
                         )
                     )
-                    + "\n\nAvailable input features:\n"
+                    + "\n\nYour app supplied:\n"
                     + ", ".join(
                         map(
                             str,
@@ -229,35 +243,19 @@ def prepare_features(
                     )
                 )
 
-            # Case-insensitive reconstruction
-            matched_columns = []
-
-            for feature in feature_names:
-
-                matched_columns.append(
-                    column_map[
-                        str(feature).lower()
-                    ]
-                )
-
             X = df[
                 matched_columns
             ].copy()
 
             X.columns = feature_names
 
-        else:
-
-            X = df[
-                feature_names
-            ].copy()
-
     else:
 
         X = df.copy()
 
+
     # --------------------------------------------------------
-    # Convert numeric values
+    # NUMERIC CONVERSION
     # --------------------------------------------------------
 
     for column in X.columns:
@@ -274,6 +272,7 @@ def prepare_features(
 
     X = X.fillna(0)
 
+
     # --------------------------------------------------------
     # APPLY FEATURE SELECTOR
     # --------------------------------------------------------
@@ -282,9 +281,11 @@ def prepare_features(
 
         try:
 
-            selected = selector.transform(X)
+            transformed = selector.transform(
+                X
+            )
 
-            # Preserve feature names if possible
+            # Preserve names where possible
             if hasattr(
                 selector,
                 "get_support"
@@ -292,50 +293,50 @@ def prepare_features(
 
                 try:
 
-                    support = selector.get_support()
+                    support = (
+                        selector.get_support()
+                    )
 
                     original_columns = list(
                         X.columns
                     )
 
                     selected_columns = [
-                        original_columns[index]
-                        for index, is_selected
+                        original_columns[i]
+                        for i, value
                         in enumerate(support)
-                        if is_selected
+                        if value
                     ]
 
                     X = pd.DataFrame(
-                        selected,
+                        transformed,
                         columns=selected_columns
                     )
 
                 except Exception:
 
                     X = pd.DataFrame(
-                        selected
+                        transformed
                     )
 
             else:
 
                 X = pd.DataFrame(
-                    selected
+                    transformed
                 )
 
-        except Exception as error:
+        except Exception:
 
-            # If selector was already applied
-            # during training, continue with current data.
-            print(
-                "Feature selector warning:",
-                error
-            )
+            # Some saved selectors may already
+            # have been applied during training.
+            pass
+
 
     return X
 
 
 # ============================================================
-# GET MODEL PROBABILITY
+# PROBABILITY
 # ============================================================
 
 def get_probability(
@@ -377,7 +378,9 @@ def predict_fault(input_data):
         fault_selector
     )
 
-    prediction = fault_model.predict(X)[0]
+    prediction = fault_model.predict(
+        X
+    )[0]
 
     probability = get_probability(
         fault_model,
@@ -403,7 +406,9 @@ def predict_overload(input_data):
         overload_selector
     )
 
-    prediction = overload_model.predict(X)[0]
+    prediction = overload_model.predict(
+        X
+    )[0]
 
     probability = get_probability(
         overload_model,
@@ -436,10 +441,8 @@ def generate_shap_explanation(
             X
         )
 
-    except Exception as error:
+    except Exception:
 
-        # Return a fallback explanation
-        # instead of crashing the entire dashboard.
         return pd.DataFrame({
             "Feature": list(X.columns),
             "Value": X.iloc[0].values,
@@ -449,29 +452,30 @@ def generate_shap_explanation(
             "Impact": [
                 "Unavailable"
                 for _ in X.columns
-            ],
-            "Absolute Impact": np.zeros(
-                len(X.columns)
-            )
+            ]
         })
 
 
-    # ========================================================
-    # HANDLE DIFFERENT SHAP OUTPUT FORMATS
-    # ========================================================
+    # --------------------------------------------------------
+    # SHAP LIST FORMAT
+    # --------------------------------------------------------
 
     if isinstance(
         shap_values,
         list
     ):
 
-        prediction = model.predict(X)[0]
+        prediction = model.predict(
+            X
+        )[0]
 
         try:
 
             class_index = list(
                 model.classes_
-            ).index(prediction)
+            ).index(
+                prediction
+            )
 
         except Exception:
 
@@ -481,6 +485,11 @@ def generate_shap_explanation(
             shap_values[class_index]
         )[0]
 
+
+    # --------------------------------------------------------
+    # SHAP ARRAY FORMAT
+    # --------------------------------------------------------
+
     elif isinstance(
         shap_values,
         np.ndarray
@@ -488,13 +497,17 @@ def generate_shap_explanation(
 
         if shap_values.ndim == 3:
 
-            prediction = model.predict(X)[0]
+            prediction = model.predict(
+                X
+            )[0]
 
             try:
 
                 class_index = list(
                     model.classes_
-                ).index(prediction)
+                ).index(
+                    prediction
+                )
 
             except Exception:
 
@@ -521,9 +534,9 @@ def generate_shap_explanation(
         ).flatten()
 
 
-    # ========================================================
-    # CREATE EXPLANATION TABLE
-    # ========================================================
+    # --------------------------------------------------------
+    # BUILD TABLE
+    # --------------------------------------------------------
 
     feature_names = list(
         X.columns
@@ -558,13 +571,11 @@ def generate_shap_explanation(
 
     })
 
-
     explanation[
         "Absolute Impact"
     ] = explanation[
         "SHAP Value"
     ].abs()
-
 
     explanation = explanation.sort_values(
         "Absolute Impact",
@@ -575,7 +586,7 @@ def generate_shap_explanation(
 
 
 # ============================================================
-# RECOMMENDATION ENGINE
+# RECOMMENDATIONS
 # ============================================================
 
 def generate_recommendations(
@@ -590,13 +601,9 @@ def generate_recommendations(
         input_data
     )
 
-    # --------------------------------------------------------
-    # Case-insensitive column lookup
-    # --------------------------------------------------------
-
     columns = {
-        str(column).lower(): column
-        for column in df.columns
+        str(c).lower(): c
+        for c in df.columns
     }
 
 
@@ -604,15 +611,15 @@ def generate_recommendations(
 
         for name in names:
 
-            if name.lower() in columns:
+            key = name.lower()
+
+            if key in columns:
 
                 try:
 
                     return float(
                         df.iloc[0][
-                            columns[
-                                name.lower()
-                            ]
+                            columns[key]
                         ]
                     )
 
@@ -623,10 +630,7 @@ def generate_recommendations(
         return None
 
 
-    # ========================================================
-    # CURRENT
-    # ========================================================
-
+    # Current
     current = get_value([
         "current",
         "load_current",
@@ -638,14 +642,11 @@ def generate_recommendations(
         if current > 80:
 
             recommendations.append(
-                "🔴 Reduce excessive load and inspect transformer loading."
+                "🔴 High current detected. Reduce excessive electrical loading."
             )
 
 
-    # ========================================================
-    # VOLTAGE
-    # ========================================================
-
+    # Voltage
     voltage = get_value([
         "voltage",
         "grid_voltage",
@@ -657,7 +658,7 @@ def generate_recommendations(
         if voltage < 210:
 
             recommendations.append(
-                "🟠 Low voltage detected. Check voltage regulation and grid stability."
+                "🟠 Low voltage detected. Check voltage regulation."
             )
 
         elif voltage > 250:
@@ -667,10 +668,7 @@ def generate_recommendations(
             )
 
 
-    # ========================================================
-    # TEMPERATURE
-    # ========================================================
-
+    # Temperature
     temperature = get_value([
         "temperature",
         "transformer_temperature",
@@ -682,14 +680,11 @@ def generate_recommendations(
         if temperature > 80:
 
             recommendations.append(
-                "🔴 High transformer temperature. Inspect cooling and reduce loading."
+                "🔴 High temperature detected. Inspect transformer cooling."
             )
 
 
-    # ========================================================
-    # POWER FACTOR
-    # ========================================================
-
+    # Power factor
     power_factor = get_value([
         "power_factor",
         "pf"
@@ -704,10 +699,7 @@ def generate_recommendations(
             )
 
 
-    # ========================================================
-    # POWER IMBALANCE
-    # ========================================================
-
+    # Imbalance
     imbalance = get_value([
         "power_imbalance",
         "imbalance",
@@ -719,69 +711,60 @@ def generate_recommendations(
         if imbalance > 10:
 
             recommendations.append(
-                "🟠 High power imbalance. Balance the load across phases."
+                "🟠 High phase imbalance detected. Balance the electrical load."
             )
 
 
-    # ========================================================
-    # FAULT PREDICTION
-    # ========================================================
-
+    # Fault
     fault_text = str(
         fault_prediction
-    ).lower().strip()
+    ).lower()
 
     if (
         "fault" in fault_text
-        or fault_text == "yes"
-        or fault_text == "true"
-        or fault_text == "1"
+        or fault_text in [
+            "1",
+            "true",
+            "yes"
+        ]
     ):
 
         recommendations.append(
-            "🚨 Transformer fault risk detected. Inspect transformer operating conditions."
+            "🚨 Transformer fault risk detected. Schedule inspection."
         )
 
 
-    # ========================================================
-    # OVERLOAD PREDICTION
-    # ========================================================
-
+    # Overload
     overload_text = str(
         overload_prediction
-    ).lower().strip()
+    ).lower()
 
     if (
         "overload" in overload_text
-        or overload_text == "yes"
-        or overload_text == "true"
-        or overload_text == "1"
+        or overload_text in [
+            "1",
+            "true",
+            "yes"
+        ]
     ):
 
         recommendations.append(
-            "🚨 Overload risk detected. Reduce non-critical loads and monitor current continuously."
+            "🚨 Overload risk detected. Reduce non-critical loads."
         )
 
 
-    # ========================================================
-    # DEFAULT
-    # ========================================================
-
-    if len(recommendations) == 0:
+    if not recommendations:
 
         recommendations.append(
-            "✅ Operating conditions appear normal. Continue regular monitoring."
+            "✅ System conditions appear normal. Continue regular monitoring."
         )
 
 
-    # Remove duplicates
-    recommendations = list(
+    return list(
         dict.fromkeys(
             recommendations
         )
     )
-
-    return recommendations
 
 
 # ============================================================
