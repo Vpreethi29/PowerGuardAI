@@ -1,4 +1,3 @@
-```python
 import os
 import gzip
 import pickle
@@ -815,4 +814,4 @@ def calculate_risk(
         max(values),
         2
     )
-```
+
