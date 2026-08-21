@@ -80,7 +80,8 @@ def load_file(path):
 # ============================================================
 
 try:
-
+    print("MODEL PATH:", FAULT_MODEL_PATH)
+    print("MODEL SIZE:", os.path.getsize(FAULT_MODEL_PATH))
     fault_model = load_file(
         FAULT_MODEL_PATH
     )
