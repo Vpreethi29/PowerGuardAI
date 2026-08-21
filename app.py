@@ -7,17 +7,21 @@ import time
 
 import streamlit as st
 
-from backend import analyze_live_data
+import backend
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
+
     page_title="PowerGuard AI",
+
     page_icon="⚡",
+
     layout="wide"
+
 )
 
 
@@ -25,16 +29,17 @@ st.set_page_config(
 # TITLE
 # ============================================================
 
-st.title("⚡ PowerGuard AI")
+st.title(
+    "⚡ PowerGuard AI"
+)
 
 st.subheader(
-    "Real-Time Smart Grid Monitoring & Predictive Analytics"
+    "Live Smart Grid Monitoring & Predictive Analytics"
 )
 
 st.write(
-    "PowerGuard AI continuously monitors simulated grid "
-    "parameters and uses machine learning to predict "
-    "transformer faults and overload conditions."
+    "Continuous machine-learning based monitoring "
+    "for transformer faults and overload conditions."
 )
 
 
@@ -43,165 +48,260 @@ st.write(
 # ============================================================
 
 st.sidebar.header(
-    "⚙️ Monitoring Settings"
+    "⚙️ Monitoring"
 )
 
-refresh_seconds = st.sidebar.slider(
+
+refresh_interval = st.sidebar.slider(
+
     "Refresh interval (seconds)",
+
     min_value=1,
+
     max_value=10,
+
     value=3
+
 )
 
-auto_refresh = st.sidebar.checkbox(
-    "Enable Live Monitoring",
+
+live_mode = st.sidebar.toggle(
+
+    "Live Monitoring",
+
     value=True
+
 )
 
 
 st.sidebar.info(
-    "Current version uses simulated live sensor data. "
-    "The same backend can later be connected to IoT, "
-    "MQTT, SCADA or API data."
+
+    "Demo mode uses simulated live sensor data. "
+    "The ML models are loaded from the saved "
+    "model files in the repository."
+
 )
 
 
 # ============================================================
-# SESSION STATE
+# MODEL STATUS
 # ============================================================
 
-if "running" not in st.session_state:
+if not backend.MODELS_LOADED:
 
-    st.session_state.running = True
+    st.error(
+        "❌ Model loading failed."
+    )
+
+    st.code(
+        backend.MODEL_ERROR
+    )
+
+    st.stop()
+
+
+st.sidebar.success(
+    "✅ ML Models Loaded"
+)
 
 
 # ============================================================
-# LIVE ANALYSIS FUNCTION
+# DASHBOARD FUNCTION
 # ============================================================
 
-def display_dashboard():
+def render_dashboard():
 
     try:
 
-        result = analyze_live_data()
+        result = backend.analyze_live_data()
 
-        data = result["data"]
-
-        fault = result["fault"]
-
-        overload = result["overload"]
-
-        risk = result["risk"]
-
-    except Exception as e:
+    except Exception as error:
 
         st.error(
-            "Unable to analyze live data."
+            "Unable to analyze the supplied live data."
         )
 
-        st.exception(e)
+        st.exception(error)
 
         return
+
+
+    data = result[
+        "data"
+    ]
+
+    fault = result[
+        "fault"
+    ]
+
+    overload = result[
+        "overload"
+    ]
+
+    risk = result[
+        "risk"
+    ]
 
 
     # ========================================================
     # TIMESTAMP
     # ========================================================
 
-    timestamp = result["timestamp"]
+    timestamp = result[
+        "timestamp"
+    ]
+
 
     st.caption(
-        f"🟢 Live data received at: "
-        f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+
+        "🟢 LIVE | Last update: "
+
+        + timestamp.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
     )
 
 
     # ========================================================
-    # TOP METRICS
+    # LIVE SENSOR DATA
     # ========================================================
 
-    st.markdown("## 📡 Live Grid Measurements")
+    st.markdown(
+        "## 📡 Live Grid Measurements"
+    )
 
-    col1, col2, col3, col4 = st.columns(4)
 
-    with col1:
+    c1, c2, c3, c4 = st.columns(4)
+
+
+    with c1:
 
         st.metric(
+
             "Voltage",
+
             f"{data['Voltage']:.2f} V"
+
         )
 
-    with col2:
+
+    with c2:
 
         st.metric(
+
             "Temperature",
+
             f"{data['Temperature']:.2f} °C"
+
         )
 
-    with col3:
+
+    with c3:
 
         st.metric(
+
             "Grid Supply",
-            f"{data['Grid Supply (kW)']:.2f} kW"
+
+            f"{data['Grid Supply']:.2f} kW"
+
         )
 
-    with col4:
+
+    with c4:
 
         st.metric(
+
             "Predicted Load",
-            f"{data['Predicted Load (kW)']:.2f} kW"
+
+            f"{data['Predicted Load']:.2f} kW"
+
         )
 
 
     # ========================================================
-    # RENEWABLE ENERGY
+    # RENEWABLE DATA
     # ========================================================
 
-    st.markdown("## ☀️ Renewable Generation")
+    st.markdown(
+        "## 🌱 Renewable Energy"
+    )
 
-    col1, col2, col3 = st.columns(3)
 
-    with col1:
+    c1, c2, c3, c4 = st.columns(4)
+
+
+    with c1:
 
         st.metric(
-            "Solar Power",
-            f"{data['Solar Power (kW)']:.2f} kW"
+
+            "Solar",
+
+            f"{data['Solar Power']:.2f} kW"
+
         )
 
-    with col2:
+
+    with c2:
 
         st.metric(
-            "Wind Power",
-            f"{data['Wind Power (kW)']:.2f} kW"
+
+            "Wind",
+
+            f"{data['Wind Power']:.2f} kW"
+
         )
 
-    with col3:
+
+    with c3:
 
         st.metric(
+
             "Total Renewable",
+
             f"{data['Total_Renewable_Power']:.2f} kW"
+
+        )
+
+
+    with c4:
+
+        st.metric(
+
+            "Renewable Ratio",
+
+            f"{data['Renewable_Ratio'] * 100:.1f}%"
+
         )
 
 
     # ========================================================
-    # SYSTEM CONDITION
+    # AI PREDICTIONS
     # ========================================================
 
-    st.markdown("## 🤖 AI Predictions")
+    st.markdown(
+        "## 🤖 AI Predictions"
+    )
 
-    col1, col2, col3 = st.columns(3)
+
+    c1, c2, c3 = st.columns(3)
 
 
+    # --------------------------------------------------------
     # Fault
-    with col1:
+    # --------------------------------------------------------
 
-        st.markdown("### 🔧 Transformer Fault")
+    with c1:
 
-        fault_status = (
+        st.markdown(
+            "### 🔧 Transformer Fault"
+        )
+
+
+        if (
             risk["fault_status"]
-        )
-
-        if fault_status == "HIGH RISK":
+            == "HIGH RISK"
+        ):
 
             st.error(
                 "⚠️ HIGH RISK"
@@ -213,24 +313,36 @@ def display_dashboard():
                 "✅ NORMAL"
             )
 
-        if fault["probability"] is not None:
+
+        if (
+            fault["probability"]
+            is not None
+        ):
 
             st.metric(
-                "Model Confidence",
+
+                "Confidence",
+
                 f"{fault['probability'] * 100:.1f}%"
+
             )
 
 
+    # --------------------------------------------------------
     # Overload
-    with col2:
+    # --------------------------------------------------------
 
-        st.markdown("### ⚡ Overload")
+    with c2:
 
-        overload_status = (
-            risk["overload_status"]
+        st.markdown(
+            "### ⚡ Overload"
         )
 
-        if overload_status == "HIGH RISK":
+
+        if (
+            risk["overload_status"]
+            == "HIGH RISK"
+        ):
 
             st.error(
                 "⚠️ HIGH RISK"
@@ -242,28 +354,45 @@ def display_dashboard():
                 "✅ NORMAL"
             )
 
-        if overload["probability"] is not None:
+
+        if (
+            overload["probability"]
+            is not None
+        ):
 
             st.metric(
-                "Model Confidence",
+
+                "Confidence",
+
                 f"{overload['probability'] * 100:.1f}%"
+
             )
 
 
+    # --------------------------------------------------------
     # Overall Risk
-    with col3:
+    # --------------------------------------------------------
 
-        st.markdown("### 🚨 Overall Risk")
+    with c3:
 
-        risk_level = risk["level"]
+        st.markdown(
+            "### 🚨 Overall Risk"
+        )
 
-        if risk_level == "CRITICAL":
+
+        if (
+            risk["level"]
+            == "CRITICAL"
+        ):
 
             st.error(
                 "🔴 CRITICAL"
             )
 
-        elif risk_level == "HIGH":
+        elif (
+            risk["level"]
+            == "HIGH"
+        ):
 
             st.warning(
                 "🟠 HIGH"
@@ -277,221 +406,267 @@ def display_dashboard():
 
 
     # ========================================================
-    # GRID DETAILS
+    # GRID CONDITION
     # ========================================================
 
     st.markdown(
-        "## 📊 Detailed Live Parameters"
+        "## 📊 Grid Condition"
     )
 
-    detail_col1, detail_col2 = st.columns(2)
+
+    c1, c2, c3, c4 = st.columns(4)
 
 
-    with detail_col1:
+    with c1:
 
-        st.write(
-            "### Electrical Parameters"
-        )
+        st.metric(
 
-        st.write(
-            f"**Voltage:** "
-            f"{data['Voltage']:.2f} V"
-        )
+            "Voltage Deviation",
 
-        st.write(
-            f"**Voltage Deviation:** "
             f"{data['Voltage_Deviation']:.2f} V"
+
         )
 
-        st.write(
-            f"**Voltage Fluctuation:** "
+
+    with c2:
+
+        st.metric(
+
+            "Voltage Fluctuation",
+
             f"{data['Voltage Fluctuation (%)']:.2f}%"
-        )
 
-        st.write(
-            f"**Power Imbalance:** "
-            f"{data['Power Imbalance (kW)']:.2f} kW"
-        )
-
-        st.write(
-            f"**Temperature:** "
-            f"{data['Temperature']:.2f} °C"
         )
 
 
-    with detail_col2:
+    with c3:
 
-        st.write(
-            "### Operational Parameters"
+        st.metric(
+
+            "Power Imbalance",
+
+            f"{data['Power Imbalance']:.2f} kW"
+
         )
 
-        st.write(
-            f"**Hour:** "
-            f"{data['Hour']}"
-        )
 
-        st.write(
-            f"**Day of Week:** "
-            f"{data['DayOfWeek']}"
-        )
+    with c4:
 
-        st.write(
-            f"**Weekend:** "
-            f"{'Yes' if data['IsWeekend'] else 'No'}"
-        )
+        st.metric(
 
-        st.write(
-            f"**Peak Hour:** "
-            f"{'Yes' if data['IsPeakHour'] else 'No'}"
-        )
+            "Electricity Price",
 
-        st.write(
-            f"**Electricity Price:** "
-            f"${data['Electricity Price (USD/kWh)']:.3f}/kWh"
+            f"${data['Electricity Price (USD/kWh)']:.3f}"
+
         )
 
 
     # ========================================================
-    # RENEWABLE RATIO
+    # TIME INFORMATION
     # ========================================================
 
     st.markdown(
-        "## 🌱 Renewable Contribution"
+        "## 🕒 Operating Conditions"
     )
 
-    renewable_ratio = (
-        data["Renewable_Ratio"] * 100
-    )
 
-    st.progress(
-        min(
-            max(
-                int(renewable_ratio),
-                0
-            ),
-            100
+    c1, c2, c3, c4 = st.columns(4)
+
+
+    with c1:
+
+        st.metric(
+
+            "Hour",
+
+            str(data["Hour"])
+
         )
-    )
 
-    st.write(
-        f"Renewable contribution: "
-        f"**{renewable_ratio:.2f}%**"
-    )
+
+    with c2:
+
+        st.metric(
+
+            "Month",
+
+            str(data["Month"])
+
+        )
+
+
+    with c3:
+
+        st.metric(
+
+            "Weekend",
+
+            "Yes"
+            if data["IsWeekend"]
+            else "No"
+
+        )
+
+
+    with c4:
+
+        st.metric(
+
+            "Peak Hour",
+
+            "Yes"
+            if data["IsPeakHour"]
+            else "No"
+
+        )
 
 
     # ========================================================
-    # RECOMMENDATIONS
+    # RISK MESSAGE
     # ========================================================
 
     st.markdown(
         "## 💡 Recommended Action"
     )
 
+
     if risk["level"] == "CRITICAL":
 
         st.error(
+
             """
-            **Immediate attention recommended.**
+            **Critical condition detected.**
 
-            Both transformer fault and overload indicators
-            are currently showing elevated risk.
+            Both fault and overload indicators are
+            currently elevated.
 
-            Verify the live sensor readings and inspect the
+            Verify sensor readings and investigate the
             affected equipment according to operational
             procedures.
             """
+
         )
+
 
     elif risk["level"] == "HIGH":
 
         st.warning(
+
             """
             **Elevated risk detected.**
 
-            At least one predictive model indicates a
+            At least one ML pipeline has identified a
             potentially abnormal operating condition.
 
-            Review the live electrical parameters and
-            investigate the affected condition.
+            Review the live parameters and investigate
+            the affected condition.
             """
+
         )
+
 
     else:
 
         st.success(
-            """
-            **System operating within the current
-            prediction range.**
 
-            Continue normal monitoring.
             """
+            **Normal operating condition.**
+
+            No elevated risk was identified by the
+            current prediction outputs.
+            """
+
         )
 
 
     # ========================================================
-    # MODEL INFORMATION
+    # TECHNICAL DETAILS
     # ========================================================
 
     with st.expander(
-        "🔍 Technical Model Information"
+        "🔍 Technical Details"
     ):
 
         st.write(
-            "### Transformer Fault Model"
+            "### Fault Model Features"
         )
 
         st.write(
-            "The fault pipeline uses the trained "
-            "transformer fault model and its saved "
-            "feature-selection artifacts."
+            backend.FAULT_REQUIRED_FEATURES
+        )
+
+
+        st.write(
+            "### Overload Model Features"
         )
 
         st.write(
-            "### Overload Model"
+            backend.OVERLOAD_REQUIRED_FEATURES
         )
 
-        st.write(
-            "The overload pipeline uses the trained "
-            "overload model and its separate "
-            "feature-selection artifacts."
-        )
 
         st.write(
-            "### Explainability"
+            "### Architecture"
         )
 
-        st.write(
-            "SHAP explainability can be added to the "
-            "live inference output using the appropriate "
-            "explainer for the trained model."
+        st.code(
+
+            """
+Live Sensor Data
+       ↓
+Feature Engineering
+       ↓
+Fault Pipeline ─────→ Fault Model
+       │
+       └─────────────→ Fault Prediction
+
+Live Sensor Data
+       ↓
+Feature Engineering
+       ↓
+Overload Pipeline ──→ Overload Model
+       │
+       └─────────────→ Overload Prediction
+
+Fault + Overload
+       ↓
+Risk Assessment
+       ↓
+Streamlit Dashboard
+            """
+
         )
 
 
 # ============================================================
-# MAIN LIVE LOOP
+# RUN DASHBOARD
 # ============================================================
 
-if auto_refresh:
+if live_mode:
 
-    placeholder = st.empty()
+    container = st.empty()
+
 
     while True:
 
-        with placeholder.container():
+        with container.container():
 
-            display_dashboard()
+            render_dashboard()
+
 
         time.sleep(
-            refresh_seconds
+            refresh_interval
         )
+
 
         st.rerun()
 
+
 else:
 
-    display_dashboard()
+    render_dashboard()
+
 
     st.info(
-        "Live monitoring is paused. "
-        "Enable it from the sidebar."
+        "Live monitoring is currently paused."
     )
