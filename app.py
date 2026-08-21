@@ -1,21 +1,17 @@
+# ============================================================
+# PowerGuard AI
+# Live Smart Grid Monitoring Dashboard
+# ============================================================
+
+import time
+
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-from datetime import datetime
 
-import backend
-
-from backend import (
-    predict_fault,
-    predict_overload,
-    generate_shap_explanation,
-    generate_recommendations,
-    calculate_risk
-)
+from backend import analyze_live_data
 
 
 # ============================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
@@ -26,918 +22,476 @@ st.set_page_config(
 
 
 # ============================================================
-# CSS
+# TITLE
 # ============================================================
 
-st.markdown(
-    """
-    <style>
+st.title("⚡ PowerGuard AI")
 
-    .main-title {
-        font-size: 45px;
-        font-weight: 800;
-        text-align: center;
-        margin-bottom: 5px;
-    }
-
-    .subtitle {
-        text-align: center;
-        font-size: 18px;
-        margin-bottom: 25px;
-    }
-
-    .section-title {
-        font-size: 27px;
-        font-weight: 700;
-        margin-top: 20px;
-        margin-bottom: 10px;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
+st.subheader(
+    "Real-Time Smart Grid Monitoring & Predictive Analytics"
 )
 
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown(
-    '<div class="main-title">⚡ POWERGUARD AI</div>',
-    unsafe_allow_html=True
+st.write(
+    "PowerGuard AI continuously monitors simulated grid "
+    "parameters and uses machine learning to predict "
+    "transformer faults and overload conditions."
 )
-
-st.markdown(
-    '<div class="subtitle">'
-    'Smart Grid Intelligence • Transformer Fault Detection • '
-    'Overload Prediction • Explainable AI'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-st.divider()
 
 
 # ============================================================
 # SIDEBAR
 # ============================================================
 
-st.sidebar.title("⚙️ Grid Parameters")
+st.sidebar.header(
+    "⚙️ Monitoring Settings"
+)
 
-st.sidebar.write(
-    "Enter the operating conditions of the electrical grid."
+refresh_seconds = st.sidebar.slider(
+    "Refresh interval (seconds)",
+    min_value=1,
+    max_value=10,
+    value=3
+)
+
+auto_refresh = st.sidebar.checkbox(
+    "Enable Live Monitoring",
+    value=True
+)
+
+
+st.sidebar.info(
+    "Current version uses simulated live sensor data. "
+    "The same backend can later be connected to IoT, "
+    "MQTT, SCADA or API data."
 )
 
 
 # ============================================================
-# TRANSFORMER FAULT FEATURES
+# SESSION STATE
 # ============================================================
 
-st.sidebar.subheader("🔧 Transformer Fault Parameters")
+if "running" not in st.session_state:
 
-
-voltage_fluctuation = st.sidebar.number_input(
-    "Voltage Fluctuation (%)",
-    min_value=-100.0,
-    max_value=100.0,
-    value=0.0,
-    step=0.1
-)
-
-
-temperature = st.sidebar.number_input(
-    "Temperature (°C)",
-    min_value=-50.0,
-    max_value=150.0,
-    value=55.0,
-    step=0.5
-)
-
-
-electricity_price = st.sidebar.number_input(
-    "Electricity Price (USD/kWh)",
-    min_value=0.0,
-    max_value=10.0,
-    value=0.15,
-    step=0.01
-)
-
-
-power_imbalance = st.sidebar.number_input(
-    "Power Imbalance",
-    min_value=-100000.0,
-    max_value=100000.0,
-    value=0.0,
-    step=0.1
-)
-
-
-renewable_ratio = st.sidebar.number_input(
-    "Renewable Ratio",
-    min_value=0.0,
-    max_value=1.0,
-    value=0.30,
-    step=0.01
-)
-
-
-absolute_power_imbalance = abs(
-    power_imbalance
-)
+    st.session_state.running = True
 
 
 # ============================================================
-# OVERLOAD MODEL FEATURES
+# LIVE ANALYSIS FUNCTION
 # ============================================================
 
-st.sidebar.subheader("⚡ Overload Parameters")
-
-
-voltage = st.sidebar.number_input(
-    "Voltage (V)",
-    min_value=0.0,
-    max_value=1000.0,
-    value=230.0,
-    step=0.1
-)
-
-
-solar_power = st.sidebar.number_input(
-    "Solar Power (kW)",
-    min_value=0.0,
-    max_value=100000.0,
-    value=10.0,
-    step=0.1
-)
-
-
-grid_supply = st.sidebar.number_input(
-    "Grid Supply (kW)",
-    min_value=0.0,
-    max_value=100000.0,
-    value=50.0,
-    step=0.1
-)
-
-
-predicted_load = st.sidebar.number_input(
-    "Predicted Load (kW)",
-    min_value=0.0,
-    max_value=100000.0,
-    value=40.0,
-    step=0.1
-)
-
-
-wind_power = st.sidebar.number_input(
-    "Wind Power (kW)",
-    min_value=0.0,
-    max_value=100000.0,
-    value=5.0,
-    step=0.1
-)
-
-
-total_renewable_power = (
-    solar_power + wind_power
-)
-
-
-voltage_deviation = st.sidebar.number_input(
-    "Voltage Deviation",
-    min_value=-1000.0,
-    max_value=1000.0,
-    value=0.0,
-    step=0.1
-)
-
-
-# ============================================================
-# TIME FEATURES
-# ============================================================
-
-st.sidebar.subheader("🕐 Time Information")
-
-
-selected_datetime = st.sidebar.datetime_input(
-    "Date and Time",
-    value=datetime.now()
-)
-
-
-hour = selected_datetime.hour
-
-month = selected_datetime.month
-
-day_of_week = selected_datetime.weekday()
-
-is_weekend = int(
-    day_of_week >= 5
-)
-
-
-# Peak-hour definition
-is_peak_hour = int(
-    hour in [
-        7,
-        8,
-        9,
-        18,
-        19,
-        20,
-        21
-    ]
-)
-
-
-peak_override = st.sidebar.checkbox(
-    "Peak Hour",
-    value=bool(is_peak_hour)
-)
-
-is_peak_hour = int(
-    peak_override
-)
-
-
-# ============================================================
-# COMPLETE INPUT DICTIONARY
-# ============================================================
-
-input_data = {
-
-    # --------------------------------------------------------
-    # FAULT MODEL FEATURES
-    # --------------------------------------------------------
-
-    "Voltage Fluctuation (%)":
-        voltage_fluctuation,
-
-    "Temperature (°C)":
-        temperature,
-
-    "Electricity Price (USD/kWh)":
-        electricity_price,
-
-    "Hour":
-        hour,
-
-    "Month":
-        month,
-
-    "DayOfWeek":
-        day_of_week,
-
-    "IsWeekend":
-        is_weekend,
-
-    "IsPeakHour":
-        is_peak_hour,
-
-    "Renewable_Ratio":
-        renewable_ratio,
-
-    "Absolute_Power_Imbalance":
-        absolute_power_imbalance,
-
-
-    # --------------------------------------------------------
-    # OVERLOAD MODEL FEATURES
-    # --------------------------------------------------------
-
-    "Voltage (V)":
-        voltage,
-
-    "Solar Power (kW)":
-        solar_power,
-
-    "Grid Supply (kW)":
-        grid_supply,
-
-    "Predicted Load (kW)":
-        predicted_load,
-
-    "Total_Renewable_Power":
-        total_renewable_power,
-
-    "Voltage_Deviation":
-        voltage_deviation
-}
-
-
-# ============================================================
-# CALCULATED VALUES
-# ============================================================
-
-with st.sidebar.expander("📋 Calculated Features"):
-
-    st.write(
-        f"**Hour:** {hour}"
-    )
-
-    st.write(
-        f"**Month:** {month}"
-    )
-
-    st.write(
-        f"**DayOfWeek:** {day_of_week}"
-    )
-
-    st.write(
-        f"**IsWeekend:** {is_weekend}"
-    )
-
-    st.write(
-        f"**IsPeakHour:** {is_peak_hour}"
-    )
-
-    st.write(
-        f"**Absolute Power Imbalance:** "
-        f"{absolute_power_imbalance:.2f}"
-    )
-
-    st.write(
-        f"**Total Renewable Power:** "
-        f"{total_renewable_power:.2f} kW"
-    )
-
-
-# ============================================================
-# ANALYZE BUTTON
-# ============================================================
-
-analyze = st.button(
-    "🔍 ANALYZE GRID",
-    type="primary",
-    use_container_width=True
-)
-
-
-# ============================================================
-# ANALYSIS
-# ============================================================
-
-if analyze:
+def display_dashboard():
 
     try:
 
-        with st.spinner(
-            "🤖 AI is analyzing smart-grid conditions..."
-        ):
+        result = analyze_live_data()
 
-            # ------------------------------------------------
-            # TRANSFORMER FAULT MODEL
-            # ------------------------------------------------
+        data = result["data"]
 
-            fault_result = predict_fault(
-                input_data
-            )
+        fault = result["fault"]
 
+        overload = result["overload"]
 
-            # ------------------------------------------------
-            # OVERLOAD MODEL
-            # ------------------------------------------------
+        risk = result["risk"]
 
-            overload_result = predict_overload(
-                input_data
-            )
+    except Exception as e:
 
-
-        # ====================================================
-        # RESULTS
-        # ====================================================
-
-        fault_prediction = (
-            fault_result["prediction"]
+        st.error(
+            "Unable to analyze live data."
         )
 
-        overload_prediction = (
-            overload_result["prediction"]
+        st.exception(e)
+
+        return
+
+
+    # ========================================================
+    # TIMESTAMP
+    # ========================================================
+
+    timestamp = result["timestamp"]
+
+    st.caption(
+        f"🟢 Live data received at: "
+        f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+
+    # ========================================================
+    # TOP METRICS
+    # ========================================================
+
+    st.markdown("## 📡 Live Grid Measurements")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        st.metric(
+            "Voltage",
+            f"{data['Voltage']:.2f} V"
         )
 
-        fault_probability = (
-            fault_result["probability"]
+    with col2:
+
+        st.metric(
+            "Temperature",
+            f"{data['Temperature']:.2f} °C"
         )
 
-        overload_probability = (
-            overload_result["probability"]
+    with col3:
+
+        st.metric(
+            "Grid Supply",
+            f"{data['Grid Supply (kW)']:.2f} kW"
         )
 
+    with col4:
 
-        # ====================================================
-        # RISK
-        # ====================================================
-
-        risk = calculate_risk(
-            fault_probability,
-            overload_probability
-        )
-
-
-        # ====================================================
-        # SYSTEM STATUS
-        # ====================================================
-
-        st.markdown(
-            '<div class="section-title">'
-            '🚦 System Status'
-            '</div>',
-            unsafe_allow_html=True
+        st.metric(
+            "Predicted Load",
+            f"{data['Predicted Load (kW)']:.2f} kW"
         )
 
 
-        col1, col2, col3 = st.columns(3)
+    # ========================================================
+    # RENEWABLE ENERGY
+    # ========================================================
+
+    st.markdown("## ☀️ Renewable Generation")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        st.metric(
+            "Solar Power",
+            f"{data['Solar Power (kW)']:.2f} kW"
+        )
+
+    with col2:
+
+        st.metric(
+            "Wind Power",
+            f"{data['Wind Power (kW)']:.2f} kW"
+        )
+
+    with col3:
+
+        st.metric(
+            "Total Renewable",
+            f"{data['Total_Renewable_Power']:.2f} kW"
+        )
 
 
-        # ----------------------------------------------------
-        # FAULT
-        # ----------------------------------------------------
+    # ========================================================
+    # SYSTEM CONDITION
+    # ========================================================
 
-        with col1:
+    st.markdown("## 🤖 AI Predictions")
 
-            st.metric(
-                "Transformer Fault",
-                str(fault_prediction)
-            )
-
-            if fault_probability is not None:
-
-                st.progress(
-                    min(
-                        max(
-                            fault_probability,
-                            0.0
-                        ),
-                        1.0
-                    )
-                )
-
-                st.caption(
-                    f"Confidence: "
-                    f"{fault_probability * 100:.2f}%"
-                )
+    col1, col2, col3 = st.columns(3)
 
 
-        # ----------------------------------------------------
-        # OVERLOAD
-        # ----------------------------------------------------
+    # Fault
+    with col1:
 
-        with col2:
+        st.markdown("### 🔧 Transformer Fault")
 
-            st.metric(
-                "Overload",
-                str(overload_prediction)
-            )
+        fault_status = (
+            risk["fault_status"]
+        )
 
-            if overload_probability is not None:
-
-                st.progress(
-                    min(
-                        max(
-                            overload_probability,
-                            0.0
-                        ),
-                        1.0
-                    )
-                )
-
-                st.caption(
-                    f"Confidence: "
-                    f"{overload_probability * 100:.2f}%"
-                )
-
-
-        # ----------------------------------------------------
-        # RISK
-        # ----------------------------------------------------
-
-        with col3:
-
-            st.metric(
-                "Overall Risk",
-                f"{risk:.2f}%"
-            )
-
-            st.progress(
-                min(
-                    max(
-                        risk / 100,
-                        0.0
-                    ),
-                    1.0
-                )
-            )
-
-
-        # ====================================================
-        # RISK MESSAGE
-        # ====================================================
-
-        if risk >= 75:
+        if fault_status == "HIGH RISK":
 
             st.error(
-                "🚨 HIGH RISK — Immediate inspection recommended."
-            )
-
-        elif risk >= 50:
-
-            st.warning(
-                "⚠️ WARNING — Abnormal operating condition detected."
+                "⚠️ HIGH RISK"
             )
 
         else:
 
             st.success(
-                "✅ NORMAL — System is operating within monitored conditions."
+                "✅ NORMAL"
+            )
+
+        if fault["probability"] is not None:
+
+            st.metric(
+                "Model Confidence",
+                f"{fault['probability'] * 100:.1f}%"
             )
 
 
-        # ====================================================
-        # GRID MONITORING
-        # ====================================================
+    # Overload
+    with col2:
 
-        st.divider()
+        st.markdown("### ⚡ Overload")
 
-        st.markdown(
-            '<div class="section-title">'
-            '📊 Grid Monitoring'
-            '</div>',
-            unsafe_allow_html=True
+        overload_status = (
+            risk["overload_status"]
         )
 
+        if overload_status == "HIGH RISK":
 
-        monitor1, monitor2, monitor3 = st.columns(3)
-
-
-        with monitor1:
-
-            st.metric(
-                "Voltage",
-                f"{voltage:.2f} V"
+            st.error(
+                "⚠️ HIGH RISK"
             )
 
-            st.metric(
-                "Temperature",
-                f"{temperature:.2f} °C"
+        else:
+
+            st.success(
+                "✅ NORMAL"
             )
 
-            st.metric(
-                "Voltage Fluctuation",
-                f"{voltage_fluctuation:.2f}%"
-            )
-
-
-        with monitor2:
+        if overload["probability"] is not None:
 
             st.metric(
-                "Solar Power",
-                f"{solar_power:.2f} kW"
-            )
-
-            st.metric(
-                "Grid Supply",
-                f"{grid_supply:.2f} kW"
-            )
-
-            st.metric(
-                "Predicted Load",
-                f"{predicted_load:.2f} kW"
+                "Model Confidence",
+                f"{overload['probability'] * 100:.1f}%"
             )
 
 
-        with monitor3:
+    # Overall Risk
+    with col3:
 
-            st.metric(
-                "Total Renewable Power",
-                f"{total_renewable_power:.2f} kW"
+        st.markdown("### 🚨 Overall Risk")
+
+        risk_level = risk["level"]
+
+        if risk_level == "CRITICAL":
+
+            st.error(
+                "🔴 CRITICAL"
             )
 
-            st.metric(
-                "Voltage Deviation",
-                f"{voltage_deviation:.2f}"
+        elif risk_level == "HIGH":
+
+            st.warning(
+                "🟠 HIGH"
             )
 
-            st.metric(
-                "Electricity Price",
-                f"${electricity_price:.3f}/kWh"
-            )
+        else:
 
-
-        # ====================================================
-        # TIME INFORMATION
-        # ====================================================
-
-        st.subheader("🕐 Time Features")
-
-
-        time1, time2, time3, time4 = st.columns(4)
-
-
-        with time1:
-
-            st.metric(
-                "Hour",
-                str(hour)
+            st.success(
+                "🟢 NORMAL"
             )
 
 
-        with time2:
+    # ========================================================
+    # GRID DETAILS
+    # ========================================================
 
-            st.metric(
-                "Month",
-                str(month)
-            )
+    st.markdown(
+        "## 📊 Detailed Live Parameters"
+    )
 
-
-        with time3:
-
-            st.metric(
-                "Day of Week",
-                str(day_of_week)
-            )
+    detail_col1, detail_col2 = st.columns(2)
 
 
-        with time4:
+    with detail_col1:
 
-            st.metric(
-                "Peak Hour",
-                "Yes" if is_peak_hour else "No"
-            )
-
-
-        # ====================================================
-        # SHAP
-        # ====================================================
-
-        st.divider()
-
-        st.markdown(
-            '<div class="section-title">'
-            '🔍 Explainable AI'
-            '</div>',
-            unsafe_allow_html=True
+        st.write(
+            "### Electrical Parameters"
         )
 
         st.write(
-            "SHAP explains which features influenced each prediction."
+            f"**Voltage:** "
+            f"{data['Voltage']:.2f} V"
+        )
+
+        st.write(
+            f"**Voltage Deviation:** "
+            f"{data['Voltage_Deviation']:.2f} V"
+        )
+
+        st.write(
+            f"**Voltage Fluctuation:** "
+            f"{data['Voltage Fluctuation (%)']:.2f}%"
+        )
+
+        st.write(
+            f"**Power Imbalance:** "
+            f"{data['Power Imbalance (kW)']:.2f} kW"
+        )
+
+        st.write(
+            f"**Temperature:** "
+            f"{data['Temperature']:.2f} °C"
         )
 
 
-        # ====================================================
-        # FAULT SHAP
-        # ====================================================
+    with detail_col2:
 
-        st.subheader(
-            "⚡ Transformer Fault Explanation"
+        st.write(
+            "### Operational Parameters"
         )
 
-
-        fault_shap = generate_shap_explanation(
-            model=backend.fault_model,
-            X=fault_result["features"]
+        st.write(
+            f"**Hour:** "
+            f"{data['Hour']}"
         )
 
-
-        if not fault_shap.empty:
-
-            st.dataframe(
-                fault_shap[
-                    [
-                        "Feature",
-                        "Value",
-                        "SHAP Value",
-                        "Impact"
-                    ]
-                ].head(10),
-                use_container_width=True,
-                hide_index=True
-            )
-
-
-            chart_data = (
-                fault_shap
-                .head(10)
-                .sort_values("SHAP Value")
-            )
-
-
-            fig, ax = plt.subplots(
-                figsize=(9, 5)
-            )
-
-            ax.barh(
-                chart_data["Feature"].astype(str),
-                chart_data["SHAP Value"]
-            )
-
-            ax.axvline(
-                0,
-                linewidth=1
-            )
-
-            ax.set_xlabel(
-                "SHAP Value"
-            )
-
-            ax.set_ylabel(
-                "Feature"
-            )
-
-            ax.set_title(
-                "Transformer Fault Feature Contributions"
-            )
-
-            plt.tight_layout()
-
-            st.pyplot(
-                fig,
-                use_container_width=True
-            )
-
-            plt.close(fig)
-
-
-        # ====================================================
-        # OVERLOAD SHAP
-        # ====================================================
-
-        st.subheader(
-            "🔥 Overload Explanation"
+        st.write(
+            f"**Day of Week:** "
+            f"{data['DayOfWeek']}"
         )
 
-
-        overload_shap = generate_shap_explanation(
-            model=backend.overload_model,
-            X=overload_result["features"]
+        st.write(
+            f"**Weekend:** "
+            f"{'Yes' if data['IsWeekend'] else 'No'}"
         )
 
-
-        if not overload_shap.empty:
-
-            st.dataframe(
-                overload_shap[
-                    [
-                        "Feature",
-                        "Value",
-                        "SHAP Value",
-                        "Impact"
-                    ]
-                ].head(10),
-                use_container_width=True,
-                hide_index=True
-            )
-
-
-            chart_data = (
-                overload_shap
-                .head(10)
-                .sort_values("SHAP Value")
-            )
-
-
-            fig, ax = plt.subplots(
-                figsize=(9, 5)
-            )
-
-            ax.barh(
-                chart_data["Feature"].astype(str),
-                chart_data["SHAP Value"]
-            )
-
-            ax.axvline(
-                0,
-                linewidth=1
-            )
-
-            ax.set_xlabel(
-                "SHAP Value"
-            )
-
-            ax.set_ylabel(
-                "Feature"
-            )
-
-            ax.set_title(
-                "Overload Feature Contributions"
-            )
-
-            plt.tight_layout()
-
-            st.pyplot(
-                fig,
-                use_container_width=True
-            )
-
-            plt.close(fig)
-
-
-        # ====================================================
-        # RECOMMENDATIONS
-        # ====================================================
-
-        st.divider()
-
-        st.markdown(
-            '<div class="section-title">'
-            '🛠️ AI Recommendations'
-            '</div>',
-            unsafe_allow_html=True
+        st.write(
+            f"**Peak Hour:** "
+            f"{'Yes' if data['IsPeakHour'] else 'No'}"
         )
 
-
-        recommendations = generate_recommendations(
-            input_data,
-            fault_prediction,
-            overload_prediction
+        st.write(
+            f"**Electricity Price:** "
+            f"${data['Electricity Price (USD/kWh)']:.3f}/kWh"
         )
-
-
-        for recommendation in recommendations:
-
-            st.info(
-                recommendation
-            )
-
-
-        # ====================================================
-        # MODEL INPUT DATA
-        # ====================================================
-
-        st.divider()
-
-        with st.expander(
-            "📋 View Complete Model Input Data"
-        ):
-
-            input_df = pd.DataFrame(
-                [input_data]
-            )
-
-            st.dataframe(
-                input_df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-
-        # ====================================================
-        # MODEL INFORMATION
-        # ====================================================
-
-        with st.expander(
-            "🤖 Model Information"
-        ):
-
-            st.write(
-                "PowerGuard AI uses two independent machine-learning "
-                "pipelines."
-            )
-
-            st.write(
-                "Transformer Fault Detection uses the saved "
-                "feature selector, selected feature list, and "
-                "transformer fault model."
-            )
-
-            st.write(
-                "Overload Detection uses its own saved feature "
-                "selector, selected feature list, and overload model."
-            )
-
-            st.write(
-                "SHAP is used to provide explainable predictions."
-            )
 
 
     # ========================================================
-    # ERROR HANDLING
+    # RENEWABLE RATIO
     # ========================================================
 
-    except Exception as error:
+    st.markdown(
+        "## 🌱 Renewable Contribution"
+    )
+
+    renewable_ratio = (
+        data["Renewable_Ratio"] * 100
+    )
+
+    st.progress(
+        min(
+            max(
+                int(renewable_ratio),
+                0
+            ),
+            100
+        )
+    )
+
+    st.write(
+        f"Renewable contribution: "
+        f"**{renewable_ratio:.2f}%**"
+    )
+
+
+    # ========================================================
+    # RECOMMENDATIONS
+    # ========================================================
+
+    st.markdown(
+        "## 💡 Recommended Action"
+    )
+
+    if risk["level"] == "CRITICAL":
 
         st.error(
-            "❌ Unable to analyze the supplied parameters."
+            """
+            **Immediate attention recommended.**
+
+            Both transformer fault and overload indicators
+            are currently showing elevated risk.
+
+            Verify the live sensor readings and inspect the
+            affected equipment according to operational
+            procedures.
+            """
         )
 
-        st.error(
-            str(error)
+    elif risk["level"] == "HIGH":
+
+        st.warning(
+            """
+            **Elevated risk detected.**
+
+            At least one predictive model indicates a
+            potentially abnormal operating condition.
+
+            Review the live electrical parameters and
+            investigate the affected condition.
+            """
         )
 
-        with st.expander(
-            "🔧 Technical Error Details"
-        ):
+    else:
 
-            st.exception(error)
+        st.success(
+            """
+            **System operating within the current
+            prediction range.**
+
+            Continue normal monitoring.
+            """
+        )
+
+
+    # ========================================================
+    # MODEL INFORMATION
+    # ========================================================
+
+    with st.expander(
+        "🔍 Technical Model Information"
+    ):
+
+        st.write(
+            "### Transformer Fault Model"
+        )
+
+        st.write(
+            "The fault pipeline uses the trained "
+            "transformer fault model and its saved "
+            "feature-selection artifacts."
+        )
+
+        st.write(
+            "### Overload Model"
+        )
+
+        st.write(
+            "The overload pipeline uses the trained "
+            "overload model and its separate "
+            "feature-selection artifacts."
+        )
+
+        st.write(
+            "### Explainability"
+        )
+
+        st.write(
+            "SHAP explainability can be added to the "
+            "live inference output using the appropriate "
+            "explainer for the trained model."
+        )
 
 
 # ============================================================
-# FOOTER
+# MAIN LIVE LOOP
 # ============================================================
 
-st.divider()
+if auto_refresh:
 
-st.caption(
-    "⚡ PowerGuard AI | Machine Learning + "
-    "Explainable AI for Smart Grid Monitoring"
-)
+    placeholder = st.empty()
+
+    while True:
+
+        with placeholder.container():
+
+            display_dashboard()
+
+        time.sleep(
+            refresh_seconds
+        )
+
+        st.rerun()
+
+else:
+
+    display_dashboard()
+
+    st.info(
+        "Live monitoring is paused. "
+        "Enable it from the sidebar."
+    )
