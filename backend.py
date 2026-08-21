@@ -1,263 +1,318 @@
 import os
 import gzip
 import pickle
-import joblib
+import tempfile
+import urllib.request
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
-import shap
 
-
-# ============================================================
-# BASE DIRECTORY
-# ============================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # ============================================================
-# LOAD MODEL / PICKLE FILE
-# Supports .pkl and .pkl.gz
+# MODEL LOCATIONS
 # ============================================================
 
-def load_model(filename):
-
-    path = os.path.join(BASE_DIR, filename)
-
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"File not found: {filename}\n"
-            f"Expected location: {path}"
-        )
-
-    # --------------------------------------------------------
-    # GZIP PICKLE
-    # --------------------------------------------------------
-
-    if filename.endswith(".gz"):
-
-        try:
-            with gzip.open(path, "rb") as file:
-                return pickle.load(file)
-
-        except Exception:
-
-            # Some files may have been compressed from joblib
-            with gzip.open(path, "rb") as file:
-                return joblib.load(file)
-
-    # --------------------------------------------------------
-    # NORMAL PICKLE
-    # --------------------------------------------------------
-
-    try:
-        return joblib.load(path)
-
-    except Exception:
-
-        with open(path, "rb") as file:
-            return pickle.load(file)
-
-
-# ============================================================
-# LOAD TRANSFORMER FAULT FILES
-# ============================================================
-
-fault_selector = load_model(
-    "feature_selector.pkl"
-)
-
-fault_selected_features = load_model(
-    "selected_features.pkl"
-)
-
-fault_model = load_model(
+FAULT_MODEL_FILE = os.path.join(
+    BASE_DIR,
     "transformer_fault_model.pkl.gz"
 )
 
-
-# ============================================================
-# LOAD OVERLOAD FILES
-# ============================================================
-
-overload_selector = load_model(
-    "overload_feature_selector.pkl"
-)
-
-overload_selected_features = load_model(
-    "overload_selected_features.pkl"
-)
-
-overload_model = load_model(
+OVERLOAD_MODEL_FILE = os.path.join(
+    BASE_DIR,
     "overload_model.pkl.gz"
 )
 
+FAULT_SELECTOR_FILE = os.path.join(
+    BASE_DIR,
+    "feature_selector.pkl"
+)
 
-# ============================================================
-# FEATURE NAME EXTRACTION
-# ============================================================
+FAULT_FEATURES_FILE = os.path.join(
+    BASE_DIR,
+    "selected_features.pkl"
+)
 
-def extract_feature_names(feature_data):
+OVERLOAD_SELECTOR_FILE = os.path.join(
+    BASE_DIR,
+    "overload_feature_selector.pkl"
+)
 
-    if feature_data is None:
-        return None
-
-    # List / tuple / numpy array
-    if isinstance(
-        feature_data,
-        (list, tuple, np.ndarray)
-    ):
-        return list(feature_data)
-
-    # Pandas Index
-    if isinstance(
-        feature_data,
-        pd.Index
-    ):
-        return list(feature_data)
-
-    # Objects with feature names
-    if hasattr(
-        feature_data,
-        "get_feature_names_out"
-    ):
-
-        try:
-            return list(
-                feature_data.get_feature_names_out()
-            )
-
-        except Exception:
-            pass
-
-    return None
+OVERLOAD_FEATURES_FILE = os.path.join(
+    BASE_DIR,
+    "overload_selected_features.pkl"
+)
 
 
 # ============================================================
-# CREATE DATAFRAME
+# OPTIONAL MODEL URLS
+#
+# If models are hosted somewhere else, put the URLs in
+# Streamlit Secrets:
+#
+# FAULT_MODEL_URL = "..."
+# OVERLOAD_MODEL_URL = "..."
 # ============================================================
 
-def create_dataframe(input_data):
+FAULT_MODEL_URL = os.environ.get(
+    "FAULT_MODEL_URL",
+    ""
+)
 
-    if isinstance(
-        input_data,
-        pd.DataFrame
-    ):
-        return input_data.copy()
-
-    if isinstance(
-        input_data,
-        dict
-    ):
-        return pd.DataFrame(
-            [input_data]
-        )
-
-    raise ValueError(
-        "Input must be a dictionary or pandas DataFrame."
-    )
+OVERLOAD_MODEL_URL = os.environ.get(
+    "OVERLOAD_MODEL_URL",
+    "")
 
 
 # ============================================================
-# PREPARE FEATURES
+# DOWNLOAD MODEL IF NOT PRESENT
 # ============================================================
 
-def prepare_features(
-    input_data,
-    selected_features,
-    selector
+def ensure_model(
+    local_path,
+    url,
+    display_name
 ):
 
-    df = create_dataframe(input_data)
+    if os.path.exists(local_path):
+        return local_path
 
-    # --------------------------------------------------------
-    # Normalize column names
-    # --------------------------------------------------------
+    if not url:
+        raise FileNotFoundError(
+            f"""
+{display_name} was not found.
 
-    df.columns = [
-        str(column).strip()
-        for column in df.columns
-    ]
+Expected file:
+{local_path}
 
-    feature_names = extract_feature_names(
-        selected_features
+Because this model is larger than GitHub's normal
+file limit, either:
+
+1. Add the model using Git LFS, OR
+2. Host the model externally and set:
+   {display_name.upper()}_URL
+
+The application cannot load a model that does not
+exist locally or at a configured URL.
+"""
+        )
+
+    try:
+
+        urllib.request.urlretrieve(
+            url,
+            local_path
+        )
+
+        if not os.path.exists(local_path):
+
+            raise RuntimeError(
+                f"Download failed for {display_name}"
+            )
+
+        return local_path
+
+    except Exception as error:
+
+        raise RuntimeError(
+            f"Could not download {display_name}: {error}"
+        )
+
+
+# ============================================================
+# LOAD PICKLE / GZIP MODEL
+# ============================================================
+
+def load_model(
+    path,
+    url="",
+    display_name="model"
+):
+
+    path = ensure_model(
+        path,
+        url,
+        display_name
     )
 
-    # --------------------------------------------------------
-    # SELECT SAVED FEATURES
-    # --------------------------------------------------------
+    try:
 
-    if feature_names is not None:
+        if path.endswith(".gz"):
 
-        missing = [
-            feature
-            for feature in feature_names
-            if feature not in df.columns
-        ]
+            with gzip.open(
+                path,
+                "rb"
+            ) as file:
 
-        if missing:
-
-            # Try case-insensitive matching
-            column_map = {
-                str(column).lower(): column
-                for column in df.columns
-            }
-
-            alternative_missing = []
-
-            for feature in missing:
-
-                if str(feature).lower() not in column_map:
-                    alternative_missing.append(feature)
-
-            if alternative_missing:
-
-                raise ValueError(
-                    "Missing model features:\n"
-                    + ", ".join(
-                        map(
-                            str,
-                            alternative_missing
-                        )
-                    )
-                    + "\n\nAvailable input features:\n"
-                    + ", ".join(
-                        map(
-                            str,
-                            df.columns
-                        )
-                    )
-                )
-
-            # Case-insensitive reconstruction
-            matched_columns = []
-
-            for feature in feature_names:
-
-                matched_columns.append(
-                    column_map[
-                        str(feature).lower()
-                    ]
-                )
-
-            X = df[
-                matched_columns
-            ].copy()
-
-            X.columns = feature_names
+                model = pickle.load(file)
 
         else:
 
-            X = df[
-                feature_names
-            ].copy()
+            with open(
+                path,
+                "rb"
+            ) as file:
 
-    else:
+                model = pickle.load(file)
 
-        X = df.copy()
+        return model
 
-    # --------------------------------------------------------
-    # Convert numeric values
-    # --------------------------------------------------------
+    except Exception as error:
+
+        raise RuntimeError(
+            f"""
+Could not load {display_name}.
+
+File:
+{path}
+
+Error:
+{type(error).__name__}: {error}
+
+IMPORTANT:
+The .pkl.gz file must be a gzip-compressed
+pickle file created from the original model.
+"""
+        )
+
+
+# ============================================================
+# LOAD SMALL FILES
+# ============================================================
+
+def load_pickle(path):
+
+    if not os.path.exists(path):
+
+        raise FileNotFoundError(
+            f"Required file not found: {path}"
+        )
+
+    with open(
+        path,
+        "rb"
+    ) as file:
+
+        return pickle.load(file)
+
+
+# ============================================================
+# LOAD ALL MODELS
+# ============================================================
+
+try:
+
+    fault_model = load_model(
+        FAULT_MODEL_FILE,
+        FAULT_MODEL_URL,
+        "transformer_fault_model.pkl.gz"
+    )
+
+    overload_model = load_model(
+        OVERLOAD_MODEL_FILE,
+        OVERLOAD_MODEL_URL,
+        "overload_model.pkl.gz"
+    )
+
+    fault_selector = load_pickle(
+        FAULT_SELECTOR_FILE
+    )
+
+    fault_selected_features = load_pickle(
+        FAULT_FEATURES_FILE
+    )
+
+    overload_selector = load_pickle(
+        OVERLOAD_SELECTOR_FILE
+    )
+
+    overload_selected_features = load_pickle(
+        OVERLOAD_FEATURES_FILE
+    )
+
+    MODELS_LOADED = True
+    MODEL_ERROR = None
+
+except Exception as error:
+
+    MODELS_LOADED = False
+    MODEL_ERROR = str(error)
+
+    fault_model = None
+    overload_model = None
+    fault_selector = None
+    fault_selected_features = None
+    overload_selector = None
+    overload_selected_features = None
+
+
+# ============================================================
+# REQUIRED FEATURES
+# ============================================================
+
+FAULT_REQUIRED_FEATURES = [
+    "Voltage Fluctuation (%)",
+    "Temperature (°C)",
+    "Electricity Price (USD/kWh)",
+    "Hour",
+    "Month",
+    "DayOfWeek",
+    "IsWeekend",
+    "IsPeakHour",
+    "Renewable_Ratio",
+    "Absolute_Power_Imbalance"
+]
+
+
+OVERLOAD_REQUIRED_FEATURES = [
+    "Voltage (V)",
+    "Solar Power (kW)",
+    "Grid Supply (kW)",
+    "Predicted Load (kW)",
+    "Hour",
+    "DayOfWeek",
+    "IsWeekend",
+    "IsPeakHour",
+    "Total_Renewable_Power",
+    "Voltage_Deviation"
+]
+
+
+# ============================================================
+# FEATURE PREPARATION
+# ============================================================
+
+def prepare_features(
+    data,
+    required_features,
+    selector
+):
+
+    df = pd.DataFrame(
+        [data]
+    )
+
+    missing = [
+        feature
+        for feature in required_features
+        if feature not in df.columns
+    ]
+
+    if missing:
+
+        raise ValueError(
+            "MODEL FEATURE MISMATCH.\n\n"
+            f"Missing: {missing}\n\n"
+            f"Required: {required_features}\n\n"
+            f"Supplied: {list(df.columns)}"
+        )
+
+    X = df[
+        required_features
+    ].copy()
 
     for column in X.columns:
 
@@ -266,81 +321,41 @@ def prepare_features(
             errors="coerce"
         )
 
-    X = X.replace(
-        [np.inf, -np.inf],
-        np.nan
-    )
+    if X.isnull().any().any():
 
-    X = X.fillna(0)
-
-    # --------------------------------------------------------
-    # APPLY FEATURE SELECTOR
-    # --------------------------------------------------------
+        raise ValueError(
+            "Invalid numeric value in model features."
+        )
 
     if selector is not None:
 
         try:
 
-            selected = selector.transform(X)
-
-            # Preserve feature names if possible
-            if hasattr(
-                selector,
-                "get_support"
-            ):
-
-                try:
-
-                    support = selector.get_support()
-
-                    original_columns = list(
-                        X.columns
-                    )
-
-                    selected_columns = [
-                        original_columns[index]
-                        for index, is_selected
-                        in enumerate(support)
-                        if is_selected
-                    ]
-
-                    X = pd.DataFrame(
-                        selected,
-                        columns=selected_columns
-                    )
-
-                except Exception:
-
-                    X = pd.DataFrame(
-                        selected
-                    )
-
-            else:
-
-                X = pd.DataFrame(
-                    selected
-                )
+            X = selector.transform(X)
 
         except Exception as error:
 
-            # If selector was already applied
-            # during training, continue with current data.
-            print(
-                "Feature selector warning:",
-                error
+            raise RuntimeError(
+                f"Feature selector error: {error}"
             )
 
     return X
 
 
 # ============================================================
-# GET MODEL PROBABILITY
+# GENERIC PREDICTION
 # ============================================================
 
-def get_probability(
+def run_model(
     model,
     X
 ):
+
+    prediction = model.predict(X)
+
+    value = prediction[0]
+
+    probability = None
 
     if hasattr(
         model,
@@ -349,44 +364,46 @@ def get_probability(
 
         try:
 
-            probabilities = (
-                model.predict_proba(X)[0]
-            )
+            probabilities = model.predict_proba(X)
 
-            return float(
-                np.max(probabilities)
+            probability = float(
+                np.max(
+                    probabilities[0]
+                )
             )
 
         except Exception:
+            probability = None
 
-            return None
-
-    return None
+    return value, probability
 
 
 # ============================================================
-# TRANSFORMER FAULT PREDICTION
+# FAULT PREDICTION
 # ============================================================
 
-def predict_fault(input_data):
+def predict_fault(data):
+
+    if not MODELS_LOADED:
+
+        raise RuntimeError(
+            MODEL_ERROR
+        )
 
     X = prepare_features(
-        input_data,
-        fault_selected_features,
+        data,
+        FAULT_REQUIRED_FEATURES,
         fault_selector
     )
 
-    prediction = fault_model.predict(X)[0]
-
-    probability = get_probability(
+    prediction, probability = run_model(
         fault_model,
         X
     )
 
     return {
         "prediction": prediction,
-        "probability": probability,
-        "features": X
+        "probability": probability
     }
 
 
@@ -394,424 +411,272 @@ def predict_fault(input_data):
 # OVERLOAD PREDICTION
 # ============================================================
 
-def predict_overload(input_data):
+def predict_overload(data):
+
+    if not MODELS_LOADED:
+
+        raise RuntimeError(
+            MODEL_ERROR
+        )
 
     X = prepare_features(
-        input_data,
-        overload_selected_features,
+        data,
+        OVERLOAD_REQUIRED_FEATURES,
         overload_selector
     )
 
-    prediction = overload_model.predict(X)[0]
-
-    probability = get_probability(
+    prediction, probability = run_model(
         overload_model,
         X
     )
 
     return {
         "prediction": prediction,
-        "probability": probability,
-        "features": X
+        "probability": probability
     }
 
 
 # ============================================================
-# SHAP EXPLANATION
+# NORMALIZE PREDICTION
 # ============================================================
 
-def generate_shap_explanation(
-    model,
-    X
-):
+def is_risk(value):
 
-    try:
+    value = str(
+        value
+    ).strip().lower()
 
-        explainer = shap.TreeExplainer(
-            model
+    return value in [
+        "1",
+        "true",
+        "yes",
+        "fault",
+        "faulty",
+        "abnormal",
+        "overload",
+        "high",
+        "critical"
+    ]
+
+
+# ============================================================
+# LIVE DATA
+# ============================================================
+
+def get_live_data():
+
+    import random
+
+    now = datetime.now()
+
+    voltage = random.uniform(
+        220,
+        240
+    )
+
+    temperature = random.uniform(
+        30,
+        75
+    )
+
+    solar = random.uniform(
+        0,
+        50
+    )
+
+    wind = random.uniform(
+        0,
+        30
+    )
+
+    grid_supply = random.uniform(
+        50,
+        150
+    )
+
+    predicted_load = random.uniform(
+        40,
+        160
+    )
+
+    voltage_fluctuation = (
+        abs(voltage - 230)
+        / 230
+    ) * 100
+
+    voltage_deviation = abs(
+        voltage - 230
+    )
+
+    renewable_power = (
+        solar + wind
+    )
+
+    total_available = (
+        grid_supply
+        + renewable_power
+    )
+
+    renewable_ratio = (
+        renewable_power
+        / total_available
+        if total_available > 0
+        else 0
+    )
+
+    power_imbalance = (
+        grid_supply
+        - predicted_load
+    )
+
+    hour = now.hour
+
+    month = now.month
+
+    day_of_week = now.weekday()
+
+    is_weekend = int(
+        day_of_week >= 5
+    )
+
+    is_peak_hour = int(
+        hour in [
+            7, 8, 9,
+            18, 19, 20, 21
+        ]
+    )
+
+    electricity_price = (
+        0.12
+        + (0.08 if is_peak_hour else 0)
+        + random.uniform(
+            -0.01,
+            0.01
         )
+    )
 
-        shap_values = explainer.shap_values(
-            X
-        )
+    return {
 
-    except Exception as error:
+        # Fault model features
 
-        # Return a fallback explanation
-        # instead of crashing the entire dashboard.
-        return pd.DataFrame({
-            "Feature": list(X.columns),
-            "Value": X.iloc[0].values,
-            "SHAP Value": np.zeros(
-                len(X.columns)
-            ),
-            "Impact": [
-                "Unavailable"
-                for _ in X.columns
-            ],
-            "Absolute Impact": np.zeros(
-                len(X.columns)
-            )
-        })
+        "Voltage Fluctuation (%)":
+            voltage_fluctuation,
+
+        "Temperature (°C)":
+            temperature,
+
+        "Electricity Price (USD/kWh)":
+            electricity_price,
+
+        "Hour":
+            hour,
+
+        "Month":
+            month,
+
+        "DayOfWeek":
+            day_of_week,
+
+        "IsWeekend":
+            is_weekend,
+
+        "IsPeakHour":
+            is_peak_hour,
+
+        "Renewable_Ratio":
+            renewable_ratio,
+
+        "Absolute_Power_Imbalance":
+            abs(power_imbalance),
+
+        # Overload model features
+
+        "Voltage (V)":
+            voltage,
+
+        "Solar Power (kW)":
+            solar,
+
+        "Grid Supply (kW)":
+            grid_supply,
+
+        "Predicted Load (kW)":
+            predicted_load,
+
+        "Total_Renewable_Power":
+            renewable_power,
+
+        "Voltage_Deviation":
+            voltage_deviation,
+
+        # Dashboard values
+
+        "Voltage":
+            voltage,
+
+        "Temperature":
+            temperature,
+
+        "Solar Power":
+            solar,
+
+        "Wind Power":
+            wind,
+
+        "Grid Supply":
+            grid_supply,
+
+        "Predicted Load":
+            predicted_load,
+
+        "Power Imbalance":
+            power_imbalance,
+
+        "Timestamp":
+            now
+    }
 
 
-    # ========================================================
-    # HANDLE DIFFERENT SHAP OUTPUT FORMATS
-    # ========================================================
+# ============================================================
+# COMPLETE ANALYSIS
+# ============================================================
 
-    if isinstance(
-        shap_values,
-        list
-    ):
+def analyze_live_data():
 
-        prediction = model.predict(X)[0]
+    data = get_live_data()
 
-        try:
+    fault = predict_fault(
+        data
+    )
 
-            class_index = list(
-                model.classes_
-            ).index(prediction)
+    overload = predict_overload(
+        data
+    )
 
-        except Exception:
+    fault_risk = is_risk(
+        fault["prediction"]
+    )
 
-            class_index = 1
+    overload_risk = is_risk(
+        overload["prediction"]
+    )
 
-        values = np.asarray(
-            shap_values[class_index]
-        )[0]
+    if fault_risk and overload_risk:
+        overall = "CRITICAL"
 
-    elif isinstance(
-        shap_values,
-        np.ndarray
-    ):
-
-        if shap_values.ndim == 3:
-
-            prediction = model.predict(X)[0]
-
-            try:
-
-                class_index = list(
-                    model.classes_
-                ).index(prediction)
-
-            except Exception:
-
-                class_index = 1
-
-            values = shap_values[
-                0,
-                :,
-                class_index
-            ]
-
-        elif shap_values.ndim == 2:
-
-            values = shap_values[0]
-
-        else:
-
-            values = shap_values.flatten()
+    elif fault_risk or overload_risk:
+        overall = "HIGH"
 
     else:
+        overall = "NORMAL"
 
-        values = np.asarray(
-            shap_values
-        ).flatten()
+    return {
 
+        "data": data,
 
-    # ========================================================
-    # CREATE EXPLANATION TABLE
-    # ========================================================
+        "fault": fault,
 
-    feature_names = list(
-        X.columns
-    )
+        "overload": overload,
 
-    values = np.asarray(
-        values
-    ).flatten()
-
-    count = min(
-        len(feature_names),
-        len(values)
-    )
-
-    explanation = pd.DataFrame({
-
-        "Feature":
-            feature_names[:count],
-
-        "Value":
-            X.iloc[0].values[:count],
-
-        "SHAP Value":
-            values[:count],
-
-        "Impact": [
-            "Increases Risk"
-            if value > 0
-            else "Decreases Risk"
-            for value in values[:count]
-        ]
-
-    })
-
-
-    explanation[
-        "Absolute Impact"
-    ] = explanation[
-        "SHAP Value"
-    ].abs()
-
-
-    explanation = explanation.sort_values(
-        "Absolute Impact",
-        ascending=False
-    )
-
-    return explanation
-
-
-# ============================================================
-# RECOMMENDATION ENGINE
-# ============================================================
-
-def generate_recommendations(
-    input_data,
-    fault_prediction,
-    overload_prediction
-):
-
-    recommendations = []
-
-    df = create_dataframe(
-        input_data
-    )
-
-    # --------------------------------------------------------
-    # Case-insensitive column lookup
-    # --------------------------------------------------------
-
-    columns = {
-        str(column).lower(): column
-        for column in df.columns
+        "overall_risk": overall
     }
-
-
-    def get_value(names):
-
-        for name in names:
-
-            if name.lower() in columns:
-
-                try:
-
-                    return float(
-                        df.iloc[0][
-                            columns[
-                                name.lower()
-                            ]
-                        ]
-                    )
-
-                except Exception:
-
-                    return None
-
-        return None
-
-
-    # ========================================================
-    # CURRENT
-    # ========================================================
-
-    current = get_value([
-        "current",
-        "load_current",
-        "transformer_current"
-    ])
-
-    if current is not None:
-
-        if current > 80:
-
-            recommendations.append(
-                "🔴 Reduce excessive load and inspect transformer loading."
-            )
-
-
-    # ========================================================
-    # VOLTAGE
-    # ========================================================
-
-    voltage = get_value([
-        "voltage",
-        "grid_voltage",
-        "line_voltage"
-    ])
-
-    if voltage is not None:
-
-        if voltage < 210:
-
-            recommendations.append(
-                "🟠 Low voltage detected. Check voltage regulation and grid stability."
-            )
-
-        elif voltage > 250:
-
-            recommendations.append(
-                "🟠 High voltage detected. Inspect voltage regulation equipment."
-            )
-
-
-    # ========================================================
-    # TEMPERATURE
-    # ========================================================
-
-    temperature = get_value([
-        "temperature",
-        "transformer_temperature",
-        "temp"
-    ])
-
-    if temperature is not None:
-
-        if temperature > 80:
-
-            recommendations.append(
-                "🔴 High transformer temperature. Inspect cooling and reduce loading."
-            )
-
-
-    # ========================================================
-    # POWER FACTOR
-    # ========================================================
-
-    power_factor = get_value([
-        "power_factor",
-        "pf"
-    ])
-
-    if power_factor is not None:
-
-        if power_factor < 0.80:
-
-            recommendations.append(
-                "🟠 Low power factor detected. Consider power-factor correction."
-            )
-
-
-    # ========================================================
-    # POWER IMBALANCE
-    # ========================================================
-
-    imbalance = get_value([
-        "power_imbalance",
-        "imbalance",
-        "phase_imbalance"
-    ])
-
-    if imbalance is not None:
-
-        if imbalance > 10:
-
-            recommendations.append(
-                "🟠 High power imbalance. Balance the load across phases."
-            )
-
-
-    # ========================================================
-    # FAULT PREDICTION
-    # ========================================================
-
-    fault_text = str(
-        fault_prediction
-    ).lower().strip()
-
-    if (
-        "fault" in fault_text
-        or fault_text == "yes"
-        or fault_text == "true"
-        or fault_text == "1"
-    ):
-
-        recommendations.append(
-            "🚨 Transformer fault risk detected. Inspect transformer operating conditions."
-        )
-
-
-    # ========================================================
-    # OVERLOAD PREDICTION
-    # ========================================================
-
-    overload_text = str(
-        overload_prediction
-    ).lower().strip()
-
-    if (
-        "overload" in overload_text
-        or overload_text == "yes"
-        or overload_text == "true"
-        or overload_text == "1"
-    ):
-
-        recommendations.append(
-            "🚨 Overload risk detected. Reduce non-critical loads and monitor current continuously."
-        )
-
-
-    # ========================================================
-    # DEFAULT
-    # ========================================================
-
-    if len(recommendations) == 0:
-
-        recommendations.append(
-            "✅ Operating conditions appear normal. Continue regular monitoring."
-        )
-
-
-    # Remove duplicates
-    recommendations = list(
-        dict.fromkeys(
-            recommendations
-        )
-    )
-
-    return recommendations
-
-
-# ============================================================
-# RISK SCORE
-# ============================================================
-
-def calculate_risk(
-    fault_probability,
-    overload_probability
-):
-
-    values = []
-
-    if fault_probability is not None:
-
-        values.append(
-            fault_probability * 100
-        )
-
-    if overload_probability is not None:
-
-        values.append(
-            overload_probability * 100
-        )
-
-    if not values:
-
-        return 0.0
-
-    return round(
-        max(values),
-        2
-    )
-
