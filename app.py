@@ -1,12 +1,9 @@
-import time
-
 import streamlit as st
-
 import backend
 
 
 # ============================================================
-# PAGE
+# PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
@@ -25,12 +22,12 @@ st.title(
 )
 
 st.subheader(
-    "Live Smart Grid Monitoring & Predictive Analytics"
+    "Smart Grid Transformer Fault & Overload Prediction"
 )
 
 st.write(
-    "Continuous machine-learning based monitoring "
-    "for transformer faults and overload conditions."
+    "Enter the current grid parameters to analyze "
+    "transformer fault and overload risk using machine learning."
 )
 
 
@@ -48,19 +45,6 @@ if not backend.MODELS_LOADED:
         backend.MODEL_ERROR
     )
 
-    st.info(
-        """
-Your large model files are not currently available
-inside the Streamlit repository.
-
-If they are hosted externally, configure these
-Streamlit Secrets:
-
-FAULT_MODEL_URL
-OVERLOAD_MODEL_URL
-"""
-    )
-
     st.stop()
 
 
@@ -70,342 +54,450 @@ st.success(
 
 
 # ============================================================
-# SIDEBAR
+# USER INPUT
 # ============================================================
 
-st.sidebar.header(
-    "⚙️ Live Monitoring"
-)
-
-refresh = st.sidebar.slider(
-    "Refresh interval",
-    1,
-    10,
-    3
-)
-
-live = st.sidebar.checkbox(
-    "Enable Live Monitoring",
-    True
+st.header(
+    "🔌 Grid Parameters"
 )
 
 
+col1, col2, col3 = st.columns(3)
+
+
+with col1:
+
+    voltage = st.number_input(
+        "Voltage (V)",
+        min_value=0.0,
+        max_value=500.0,
+        value=230.0,
+        step=0.1
+    )
+
+
+    temperature = st.number_input(
+        "Temperature (°C)",
+        min_value=-20.0,
+        max_value=150.0,
+        value=35.0,
+        step=0.5
+    )
+
+
+    electricity_price = st.number_input(
+        "Electricity Price (USD/kWh)",
+        min_value=0.0,
+        max_value=10.0,
+        value=0.15,
+        step=0.01
+    )
+
+
+with col2:
+
+    solar_power = st.number_input(
+        "Solar Power (kW)",
+        min_value=0.0,
+        value=20.0,
+        step=1.0
+    )
+
+
+    wind_power = st.number_input(
+        "Wind Power (kW)",
+        min_value=0.0,
+        value=10.0,
+        step=1.0
+    )
+
+
+    grid_supply = st.number_input(
+        "Grid Supply (kW)",
+        min_value=0.0,
+        value=100.0,
+        step=1.0
+    )
+
+
+with col3:
+
+    predicted_load = st.number_input(
+        "Predicted Load (kW)",
+        min_value=0.0,
+        value=90.0,
+        step=1.0
+    )
+
+
+    hour = st.number_input(
+        "Hour",
+        min_value=0,
+        max_value=23,
+        value=12,
+        step=1
+    )
+
+
+    month = st.number_input(
+        "Month",
+        min_value=1,
+        max_value=12,
+        value=6,
+        step=1
+    )
+
+
+day_of_week = st.selectbox(
+    "Day of Week",
+    options=list(range(7)),
+    format_func=lambda x: [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday"
+    ][x]
+)
+
+
 # ============================================================
-# DASHBOARD
+# ANALYZE BUTTON
 # ============================================================
 
-def dashboard():
+st.divider()
+
+
+analyze = st.button(
+    "🔍 Analyze Grid Condition",
+    type="primary",
+    use_container_width=True
+)
+
+
+# ============================================================
+# PREDICTION
+# ============================================================
+
+if analyze:
 
     try:
 
-        result = backend.analyze_live_data()
+        result = backend.analyze_input(
 
-    except Exception as error:
+            voltage=voltage,
 
-        st.error(
-            "❌ Prediction failed"
+            temperature=temperature,
+
+            electricity_price=electricity_price,
+
+            solar_power=solar_power,
+
+            wind_power=wind_power,
+
+            grid_supply=grid_supply,
+
+            predicted_load=predicted_load,
+
+            hour=hour,
+
+            month=month,
+
+            day_of_week=day_of_week
         )
 
-        st.exception(error)
 
-        return
+        fault = result[
+            "fault"
+        ]
 
-    data = result["data"]
+        overload = result[
+            "overload"
+        ]
 
-    fault = result["fault"]
+        overall = result[
+            "overall_risk"
+        ]
 
-    overload = result["overload"]
-
-    overall = result["overall_risk"]
-
-
-    # ========================================================
-    # TIME
-    # ========================================================
-
-    st.caption(
-        "🟢 LIVE | "
-        + data["Timestamp"].strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-    )
+        derived = result[
+            "derived"
+        ]
 
 
-    # ========================================================
-    # LIVE DATA
-    # ========================================================
+        # ====================================================
+        # RESULTS
+        # ====================================================
 
-    st.header(
-        "📡 Live Grid Data"
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        "Voltage",
-        f"{data['Voltage']:.2f} V"
-    )
-
-    c2.metric(
-        "Temperature",
-        f"{data['Temperature']:.2f} °C"
-    )
-
-    c3.metric(
-        "Grid Supply",
-        f"{data['Grid Supply']:.2f} kW"
-    )
-
-    c4.metric(
-        "Predicted Load",
-        f"{data['Predicted Load']:.2f} kW"
-    )
-
-
-    # ========================================================
-    # RENEWABLE
-    # ========================================================
-
-    st.header(
-        "🌱 Renewable Energy"
-    )
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric(
-        "Solar",
-        f"{data['Solar Power']:.2f} kW"
-    )
-
-    c2.metric(
-        "Wind",
-        f"{data['Wind Power']:.2f} kW"
-    )
-
-    c3.metric(
-        "Total Renewable",
-        f"{data['Total_Renewable_Power']:.2f} kW"
-    )
-
-
-    # ========================================================
-    # PREDICTIONS
-    # ========================================================
-
-    st.header(
-        "🤖 AI Predictions"
-    )
-
-    c1, c2, c3 = st.columns(3)
-
-
-    with c1:
-
-        st.subheader(
-            "🔧 Transformer Fault"
+        st.header(
+            "🤖 AI Prediction Results"
         )
 
-        if backend.is_risk(
-            fault["prediction"]
-        ):
 
-            st.error(
-                "⚠️ HIGH RISK"
+        col1, col2, col3 = st.columns(3)
+
+
+        # ----------------------------------------------------
+        # FAULT
+        # ----------------------------------------------------
+
+        with col1:
+
+            st.subheader(
+                "🔧 Transformer Fault"
             )
 
-        else:
+            if backend.is_high_risk(
+                fault["prediction"]
+            ):
 
-            st.success(
-                "✅ NORMAL"
+                st.error(
+                    "⚠️ HIGH RISK"
+                )
+
+            else:
+
+                st.success(
+                    "✅ NORMAL"
+                )
+
+
+            st.write(
+                "Model Prediction:",
+                fault["prediction"]
             )
 
-        st.write(
-            "Prediction:",
-            fault["prediction"]
+
+            if fault["probability"] is not None:
+
+                st.metric(
+                    "Confidence",
+                    f"{fault['probability'] * 100:.1f}%"
+                )
+
+
+        # ----------------------------------------------------
+        # OVERLOAD
+        # ----------------------------------------------------
+
+        with col2:
+
+            st.subheader(
+                "⚡ Overload"
+            )
+
+            if backend.is_high_risk(
+                overload["prediction"]
+            ):
+
+                st.error(
+                    "⚠️ HIGH RISK"
+                )
+
+            else:
+
+                st.success(
+                    "✅ NORMAL"
+                )
+
+
+            st.write(
+                "Model Prediction:",
+                overload["prediction"]
+            )
+
+
+            if overload["probability"] is not None:
+
+                st.metric(
+                    "Confidence",
+                    f"{overload['probability'] * 100:.1f}%"
+                )
+
+
+        # ----------------------------------------------------
+        # OVERALL
+        # ----------------------------------------------------
+
+        with col3:
+
+            st.subheader(
+                "🚨 Overall Risk"
+            )
+
+
+            if overall == "CRITICAL":
+
+                st.error(
+                    "🔴 CRITICAL"
+                )
+
+            elif overall == "HIGH":
+
+                st.warning(
+                    "🟠 HIGH"
+                )
+
+            else:
+
+                st.success(
+                    "🟢 NORMAL"
+                )
+
+
+        # ====================================================
+        # DERIVED FEATURES
+        # ====================================================
+
+        st.header(
+            "📊 Calculated Grid Features"
         )
 
-        if fault["probability"] is not None:
+
+        c1, c2, c3, c4 = st.columns(4)
+
+
+        c1.metric(
+            "Voltage Fluctuation",
+            f"{derived['Voltage Fluctuation']:.2f}%"
+        )
+
+
+        c2.metric(
+            "Voltage Deviation",
+            f"{derived['Voltage Deviation']:.2f} V"
+        )
+
+
+        c3.metric(
+            "Renewable Ratio",
+            f"{derived['Renewable Ratio'] * 100:.2f}%"
+        )
+
+
+        c4.metric(
+            "Power Imbalance",
+            f"{derived['Power Imbalance']:.2f} kW"
+        )
+
+
+        # ====================================================
+        # OPERATING CONDITIONS
+        # ====================================================
+
+        st.header(
+            "🕒 Operating Conditions"
+        )
+
+
+        c1, c2 = st.columns(2)
+
+
+        with c1:
 
             st.metric(
-                "Confidence",
-                f"{fault['probability'] * 100:.1f}%"
+                "Weekend",
+                "Yes"
+                if derived["Is Weekend"]
+                else "No"
             )
 
 
-    with c2:
-
-        st.subheader(
-            "⚡ Overload"
-        )
-
-        if backend.is_risk(
-            overload["prediction"]
-        ):
-
-            st.error(
-                "⚠️ HIGH RISK"
-            )
-
-        else:
-
-            st.success(
-                "✅ NORMAL"
-            )
-
-        st.write(
-            "Prediction:",
-            overload["prediction"]
-        )
-
-        if overload["probability"] is not None:
+        with c2:
 
             st.metric(
-                "Confidence",
-                f"{overload['probability'] * 100:.1f}%"
+                "Peak Hour",
+                "Yes"
+                if derived["Is Peak Hour"]
+                else "No"
             )
 
 
-    with c3:
+        # ====================================================
+        # RECOMMENDATION
+        # ====================================================
 
-        st.subheader(
-            "🚨 Overall Risk"
+        st.header(
+            "💡 Recommendation"
         )
+
 
         if overall == "CRITICAL":
 
             st.error(
-                "🔴 CRITICAL"
+                "Critical condition detected. "
+                "Both transformer fault and overload "
+                "indicators require immediate attention."
             )
 
         elif overall == "HIGH":
 
             st.warning(
-                "🟠 HIGH"
+                "Elevated risk detected. "
+                "Review the grid parameters and "
+                "investigate the affected condition."
             )
 
         else:
 
             st.success(
-                "🟢 NORMAL"
+                "The system is operating within the "
+                "current model's normal prediction range."
             )
 
 
-    # ========================================================
-    # GRID CONDITION
-    # ========================================================
+        # ====================================================
+        # TECHNICAL DETAILS
+        # ====================================================
 
-    st.header(
-        "📊 Grid Condition"
-    )
+        with st.expander(
+            "🔍 Technical Details"
+        ):
 
-    c1, c2, c3, c4 = st.columns(4)
+            st.write(
+                "### Transformer Fault Features"
+            )
 
-    c1.metric(
-        "Voltage Deviation",
-        f"{data['Voltage_Deviation']:.2f} V"
-    )
-
-    c2.metric(
-        "Voltage Fluctuation",
-        f"{data['Voltage Fluctuation (%)']:.2f}%"
-    )
-
-    c3.metric(
-        "Power Imbalance",
-        f"{data['Power Imbalance']:.2f} kW"
-    )
-
-    c4.metric(
-        "Electricity Price",
-        f"${data['Electricity Price (USD/kWh)']:.3f}"
-    )
+            st.write(
+                backend.FAULT_FEATURES
+            )
 
 
-    # ========================================================
-    # OPERATING CONDITION
-    # ========================================================
+            st.write(
+                "### Overload Features"
+            )
 
-    st.header(
-        "🕒 Operating Conditions"
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        "Hour",
-        data["Hour"]
-    )
-
-    c2.metric(
-        "Month",
-        data["Month"]
-    )
-
-    c3.metric(
-        "Weekend",
-        "Yes"
-        if data["IsWeekend"]
-        else "No"
-    )
-
-    c4.metric(
-        "Peak Hour",
-        "Yes"
-        if data["IsPeakHour"]
-        else "No"
-    )
+            st.write(
+                backend.OVERLOAD_FEATURES
+            )
 
 
-    # ========================================================
-    # ACTION
-    # ========================================================
+            st.write(
+                "### Input Values"
+            )
 
-    st.header(
-        "💡 Recommended Action"
-    )
+            st.json(
+                result["inputs"]
+            )
 
-    if overall == "CRITICAL":
+
+    except Exception as error:
 
         st.error(
-            "Critical condition detected. "
-            "Both transformer fault and overload "
-            "indicators require immediate investigation."
+            "❌ Unable to analyze the supplied parameters."
         )
 
-    elif overall == "HIGH":
-
-        st.warning(
-            "Elevated risk detected. "
-            "Review the affected grid condition."
-        )
-
-    else:
-
-        st.success(
-            "Normal operating condition detected."
-        )
+        st.exception(error)
 
 
 # ============================================================
-# RUN
+# FOOTER
 # ============================================================
 
-if live:
+st.divider()
 
-    placeholder = st.empty()
-
-    while True:
-
-        with placeholder.container():
-
-            dashboard()
-
-        time.sleep(
-            refresh
-        )
-
-        st.rerun()
-
-else:
-
-    dashboard()
+st.caption(
+    "⚡ PowerGuard AI | Machine Learning + "
+    "Explainable Smart Grid Monitoring"
+)
